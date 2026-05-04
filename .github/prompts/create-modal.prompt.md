@@ -49,6 +49,46 @@ Erstelle ein neues Modal fuer dieses Projekt und halte dich strikt an diese Vorg
   - `:error-text="..."`
 - Modal-weite Serverfehler duerfen zusaetzlich im Actions-Bereich angezeigt werden.
 
+### Umfang der Validierung
+
+Validiere nicht nur Pflichtfelder, sondern auch das **Format und die inhaltliche Gueltigkeit** aller Felder, so dass ungueltige Daten nicht an den Server uebermittelt werden.
+
+**Pflichtfeld-Checks:**
+- Jedes Pflichtfeld muss mit `.min(1, ...)` oder `.nonempty(...)` geprueft werden.
+- Maximale Laengen gemaess Datenbankschema beachten (`.max(...)`).
+
+**Format-Validierungen:**
+- **URLs** (z. B. Felder wie `*_url`): nur gueltiges `http://` oder `https://`-Schema erlaubt.
+  Pruefe mit `new URL(value)` und kontrolliere `url.protocol`.
+- **E-Mail-Adressen**: Format-Pruefung via Regex oder `z.string().email(...)`.
+- **Telefonnummern**: Mindestens pruefe auf unplausible Zeichen (z. B. Buchstaben ausserhalb von +, Leerzeichen, Ziffern und `()-`).
+- **IANA-Zeitzonen**: Validiere gegen `Intl.supportedValuesOf('timeZone')` (ein `Set` aus dem Ergebnis aufbauen).
+- **BCP 47-Sprachcodes**: Validiere per `Intl.getCanonicalLocales(value)` — throws bei ungueltigen Tags.
+- **GTFS-IDs**: Duerfen kein Komma enthalten (Komma ist das CSV-Trennzeichen in GTFS-Dateien).
+- **Enum-/Auswahl-Felder**: Nur definierte Werte akzeptieren (z. B. `z.enum([...])`).
+- **Optionale Felder**: Werden sie befuellt, gelten dieselben Format-Regeln wie fuer Pflichtfelder.
+  Leere optionale Felder werden vor dem `emit` in `null` umgewandelt, nicht als leerer String gesendet.
+
+**Hilfsfunktionen im Modal:**
+```js
+const IANA_TIMEZONES = new Set(Intl.supportedValuesOf('timeZone'))
+
+function isValidHttpUrl(value) {
+  try { const u = new URL(value); return u.protocol === 'http:' || u.protocol === 'https:' }
+  catch { return false }
+}
+
+function isValidBcp47(tag) {
+  try { Intl.getCanonicalLocales(tag); return tag.trim().length > 0 }
+  catch { return false }
+}
+```
+
+**Clearning von Feldfehlern:**
+- Jedes validierte Feld bekommt einen `@input`-Handler, der den Feldfehler sofort loescht:
+  `@input="form.field = $event.target.value; clearFieldError('field')"`
+- `clearFieldError` setzt `fieldErrors.value[name] = null`.
+
 ## Lokalisierung
 - Alle sichtbaren Texte muessen ueber `t('...')` lokalisiert werden.
 - Das gilt fuer:

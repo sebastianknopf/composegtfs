@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -91,3 +91,27 @@ class Version(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(128), unique=True, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+
+    agencies = relationship("Agency", back_populates="version", cascade="all, delete-orphan")
+
+
+# ---------------------------------------------------------------------------
+# Agencies  — GTFS agency.txt entities, scoped to a Version
+# ---------------------------------------------------------------------------
+
+class Agency(Base):
+    __tablename__ = "agencies"
+
+    version_id      = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    agency_id       = Column(String(255), primary_key=True)
+
+    agency_name     = Column(String(255), nullable=False)
+    agency_url      = Column(String(2048), nullable=False)
+    agency_timezone = Column(String(64), nullable=False)
+    agency_lang     = Column(String(35), nullable=True)
+    agency_phone    = Column(String(64), nullable=True)
+    agency_fare_url = Column(String(2048), nullable=True)
+    agency_email    = Column(String(254), nullable=True)
+    cemv_support    = Column(Integer, nullable=True)
+
+    version = relationship("Version", back_populates="agencies")

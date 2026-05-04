@@ -133,6 +133,9 @@ onMounted(loadItems)
   gap: 1.25rem;
   height: 100%;
 }
+
+/* Nur komponentenspezifische Stile hier — view-header, table-action-btn,
+   perspective-tab usw. sind bereits global in layout.css definiert. */
 </style>
 ```
 
@@ -169,6 +172,56 @@ const subitemColumns = [ /* Spalten für Perspektive 2 */ ]
   <DataTable v-if="activePerspective === 'subitems'" ... />
 </template>
 ```
+
+## Bestätigungsdialoge für gefährliche Aktionen
+
+Alle Aktionen mit negativen, schwer umkehrbaren Konsequenzen (Löschen, Zurücksetzen, Überschreiben, …) **müssen** über `ConfirmDialog` (`@/components/ConfirmDialog.vue`) abgesichert werden.
+
+**Pflicht:** Bei Lösch-Aktionen und anderen destruktiven Aktionen immer `:danger="true"`, `:confirm-label` und `:cancel-label` setzen. Die Label-Werte müssen lokalisiert werden.
+
+```html
+<!-- Pflichtmuster für Löschen -->
+<ConfirmDialog
+  v-model="confirmOpen"
+  :title="t('resource.delete_confirm_title')"
+  :message="t('resource.delete_confirm_message', { name: pendingDelete?.name ?? '' })"
+  :confirm-label="t('common.delete')"
+  :cancel-label="t('common.cancel')"
+  :danger="true"
+  @confirm="handleConfirmDelete"
+/>
+```
+
+Das dazugehörige Script-Pattern:
+
+```js
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+
+const confirmOpen   = ref(false)
+const pendingDelete = ref(null)
+
+function requestDelete(item) {
+  pendingDelete.value = item
+  confirmOpen.value   = true
+}
+
+async function handleConfirmDelete() {
+  if (!pendingDelete.value) return
+  const target = pendingDelete.value
+  pendingDelete.value = null
+  try {
+    await api.resource.delete(target.id)
+    items.value = items.value.filter(i => i.id !== target.id)
+  } catch (err) {
+    toast.show(err.status === 404 ? t('resource.error_not_found') : t('error.server'), 'error')
+    await loadItems()
+  }
+}
+```
+
+Locale-Keys, die jede Ansicht mit Löschen-Funktion braucht:
+- `resource.delete_confirm_title`
+- `resource.delete_confirm_message` — mit `{name}`-Platzhalter für den Anzeigenamen des Eintrags
 
 ## Berechtigungen für UI-Controls
 
@@ -267,7 +320,10 @@ Alle Schlüssel müssen in **beiden** Locale-Dateien angelegt werden:
 - `frontend/src/locales/en.js`
 
 ## Styling-Konventionen
-- Globale Stile in `frontend/src/assets/layout.css` — insbesondere `.view-header`, `.perspective-tab`, `.table-action-btn` sind bereits global definiert und dürfen direkt verwendet werden.
-- Komponentenspezifische Stile im `<style scoped>` Block der Ansicht.
+- Globale Stile in `frontend/src/assets/layout.css` — folgende Klassen sind bereits global definiert und **dürfen direkt verwendet werden, ohne sie erneut im `<style scoped>` der Ansicht zu deklarieren**:
+  - `.view-header`, `.view-header__icon`, `.view-header__title`, `.view-header__actions` — Header-Zeile mit Icon, Titel und rechtsbündigen Aktionen
+  - `.perspective-tab`, `.perspective-tabs` — Tab-Steuerelemente für Sub-Perspektiven
+  - `.table-action-btn`, `.table-action-btn--danger` — Aktions-Buttons in Tabellenzeilen (werden von `DataTable` via `:deep()` gestylt)
+- Komponentenspezifische Stile gehören in den `<style scoped>` Block der Ansicht.
 - `border-radius` maximal `6px` (außer `50%`).
 - Keine Inline-Styles verwenden.

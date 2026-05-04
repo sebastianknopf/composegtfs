@@ -362,31 +362,6 @@ async function handleConfirmDelete() {
   height: 100%;
 }
 
-/* View header */
-.view-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-bottom: 1rem;
-}
-
-.view-header__icon {
-  font-size: 1.5rem;
-  --md-icon-size: 1.5rem;
-  color: var(--md-sys-color-primary, #1f69e0);
-}
-
-.view-header__title {
-  font-size: var(--font-size-3, 1.25rem);
-  font-weight: 600;
-  color: var(--md-sys-color-on-surface, #222);
-  margin: 0;
-}
-
-.view-header__actions {
-  margin-left: auto;
-}
-
 /* Perspective tabs */
 .perspective-tabs {
   display: flex;

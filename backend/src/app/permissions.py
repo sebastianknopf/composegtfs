@@ -107,6 +107,15 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
             PermissionDef("schedule:write", "permissions.schedule.write"),
         ],
     ),
+    PermissionGroup(
+        key="agency",
+        lang_key="permissions._groups.agency",
+        permissions=[
+            PermissionDef("agency:read",   "permissions.agency.read"),
+            PermissionDef("agency:write",  "permissions.agency.write"),
+            PermissionDef("agency:delete", "permissions.agency.delete"),
+        ],
+    ),
 ]
 
 # Flat set of all valid codenames — used for validation on write
@@ -150,6 +159,11 @@ class Permission(str, Enum):
     # Schedule (GTFS)
     SCHEDULE_READ  = "schedule:read"
     SCHEDULE_WRITE = "schedule:write"
+
+    # Agency (GTFS)
+    AGENCY_READ   = "agency:read"
+    AGENCY_WRITE  = "agency:write"
+    AGENCY_DELETE = "agency:delete"
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from app.config import settings
 from app.database import get_session
@@ -86,3 +88,44 @@ async def authenticate_user(username: str, password: str, session: AsyncSession)
     if not verify_password(password, user.hashed_password):
         return None
     return user
+
+
+# ---------------------------------------------------------------------------
+# Sliding-token middleware
+# ---------------------------------------------------------------------------
+
+class SlidingTokenMiddleware(BaseHTTPMiddleware):
+    """Attach a fresh token in the ``X-New-Token`` response header whenever
+    an authenticated request carries a JWT that has consumed more than half
+    of its lifetime.  The frontend reads this header and silently replaces
+    the stored token so that active sessions never expire.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return response
+
+        token = auth[len("Bearer "):]
+        try:
+            payload = jwt.decode(
+                token,
+                settings.secret_key,
+                algorithms=[settings.algorithm],
+            )
+            exp: float | None = payload.get("exp")
+            sub: str | None = payload.get("sub")
+            if exp and sub:
+                now = datetime.now(timezone.utc).timestamp()
+                lifetime = settings.access_token_expire_minutes * 60
+                time_remaining = exp - now
+                if 0 < time_remaining < lifetime / 2:
+                    new_token = create_access_token(subject=sub)
+                    response.headers["X-New-Token"] = new_token
+        except Exception:
+            # Never disrupt a response because of token introspection
+            pass
+
+        return response

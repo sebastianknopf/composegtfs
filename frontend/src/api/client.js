@@ -73,6 +73,12 @@ async function request(method, path, body) {
 
   const res = await fetch(`${BASE}${path}`, options)
 
+  // Silently adopt a refreshed token if the backend issued one
+  const newToken = res.headers.get('X-New-Token')
+  if (newToken) {
+    localStorage.setItem('access_token', newToken)
+  }
+
   if (!res.ok) {
     const err = await _parseError(res)
     if (res.status === 401 && localStorage.getItem('access_token')) {
@@ -131,6 +137,14 @@ export const api = {
     get:    (id)         => request('GET',    `/versions/${id}`),
     rename: (id, data)   => request('PATCH',  `/versions/${id}`, data),
     delete: (id)         => request('DELETE', `/versions/${id}`),
+  },
+
+  agencies: {
+    list:   (versionId)              => request('GET',    `/versions/${versionId}/agencies`),
+    create: (versionId, data)        => request('POST',   `/versions/${versionId}/agencies`, data),
+    get:    (versionId, agencyId)    => request('GET',    `/versions/${versionId}/agencies/${agencyId}`),
+    update: (versionId, agencyId, data) => request('PUT', `/versions/${versionId}/agencies/${agencyId}`, data),
+    delete: (versionId, agencyId)    => request('DELETE', `/versions/${versionId}/agencies/${agencyId}`),
   },
 
   /**
