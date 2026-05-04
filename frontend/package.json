@@ -1,0 +1,24 @@
+{
+  "name": "composegtfs-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0",
+    "vue-i18n": "^10.0.0",
+    "@material/web": "^2.0.0",
+    "maplibre-gl": "^5.0.0",
+    "material-symbols": "^0.28.0",
+    "open-props": "^1.7.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "vite": "^6.0.0"
+  }
+}

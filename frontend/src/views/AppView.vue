@@ -1,0 +1,139 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { authStore } from '@/stores/auth.js'
+import { permissionsStore } from '@/stores/permissions.js'
+import { forbiddenState } from '@/stores/forbidden.js'
+import { settingsStore } from '@/stores/settings.js'
+import { versionsStore } from '@/stores/versions.js'
+import AppTopBar from '@/components/AppTopBar.vue'
+import AppSideBar from '@/components/AppSideBar.vue'
+import AppToast from '@/components/AppToast.vue'
+import ForbiddenView from '@/views/ForbiddenView.vue'
+import '@material/web/icon/icon.js'
+
+const router = useRouter()
+const route = useRoute()
+
+onMounted(() => {
+  settingsStore.load()
+  // Always force-reload so a different user logging in gets fresh permissions
+  permissionsStore.load(true)
+  versionsStore.load()
+})
+
+/**
+ * Application sections displayed in the TopBar.
+ * Each section owns its sidebar views (position 'top' or 'bottom').
+ * 'icon' is a Material Symbols ligature name.
+ * Sections with no views hide the sidebar automatically.
+ */
+const sections = [
+  {
+    id: 'masterdata',
+    labelKey: 'sections.masterdata',
+    icon: 'storage',
+    defaultView: 'agency',
+    views: [
+      { id: 'agency',   labelKey: 'views.agency',   icon: 'business',  position: 'top' },
+      { id: 'accounts', labelKey: 'views.accounts', icon: 'group',     position: 'bottom', permission: 'accounts:read' },
+      { id: 'settings', labelKey: 'views.settings', icon: 'settings',  position: 'bottom', permission: 'settings:read' },
+    ],
+  },
+  {
+    id: 'network',
+    labelKey: 'sections.network',
+    icon: 'map',
+    defaultView: 'network',
+    permission: 'network:read',
+    views: [],
+  },
+  {
+    id: 'schedule',
+    labelKey: 'sections.schedule',
+    icon: 'calendar_month',
+    defaultView: null,
+    views: [],
+  },
+]
+
+/** Returns true if the current user may see a view or section entry. */
+function canSeeEntry(entry) {
+  if (!entry.permission) return true
+  return permissionsStore.state.isSuperuser || permissionsStore.has(entry.permission)
+}
+
+/** Sections visible to the current user (at least one visible view, or no views defined). */
+const visibleSections = computed(() =>
+  sections.filter(s => {
+    if (s.permission && !canSeeEntry(s)) return false
+    if (s.views.length === 0) return true
+    return s.views.some(v => canSeeEntry(v))
+  })
+)
+
+// Derive the active section from the current route meta
+const activeSection = computed(() => route.meta?.section ?? sections[0]?.id ?? null)
+
+// Derive the active view from the current route name
+const activeView = computed(() => route.name ?? null)
+
+// Whether the current route fills the whole content area (no sidebar)
+const isFullscreen = computed(() => !!route.meta?.fullscreen)
+
+// The sidebar items for the active section — filtered by permission
+const sidebarItems = computed(() => {
+  const section = sections.find(s => s.id === activeSection.value)
+  return (section?.views ?? []).filter(v => canSeeEntry(v))
+})
+
+// Per-section collapsed state is managed inside AppSideBar itself.
+// AppView only needs to know the active section to pass as sectionId.
+
+function onSectionChange(id) {
+  const section = sections.find(s => s.id === id)
+  const target = section?.defaultView ?? section?.views[0]?.id
+  if (target) router.push({ name: target })
+}
+
+function onViewSelect(id) {
+  router.push({ name: id })
+}
+
+function onLogout() {
+  authStore.logout()
+  permissionsStore.reset()
+  versionsStore.reset()
+  router.push('/login')
+}
+</script>
+
+<template>
+  <div class="app-layout">
+    <AppTopBar
+      :title="settingsStore.state.appTitle"
+      :sections="visibleSections"
+      :active-section="activeSection"
+      @section-change="onSectionChange"
+      @logout="onLogout"
+    />
+    <div class="app-body">
+      <AppSideBar
+        v-if="!isFullscreen"
+        :items="sidebarItems"
+        :active-item="activeView"
+        :section-id="activeSection"
+        @item-select="onViewSelect"
+      />
+      <main :class="['app-main', { 'app-main--fullscreen': isFullscreen }]">
+        <ForbiddenView v-if="forbiddenState" @back="router.back()" />
+        <RouterView v-else v-slot="{ Component }">
+          <KeepAlive>
+            <component :is="Component" :key="$route.name" />
+          </KeepAlive>
+        </RouterView>
+      </main>
+    </div>
+  </div>
+  <AppToast />
+</template>

@@ -1,0 +1,421 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* ---- md-dialog global overrides ---- */
+/* White container background via MD3 token */
+md-dialog {
+  --md-dialog-container-color: #ffffff;
+  width: min(800px, 96vw);
+  max-width: 96vw;
+}
+
+/* Override the built-in open/close animation: subtle scale+fade, max 0.3s, no Y-slide */
+md-dialog::part(dialog) {
+  animation-name: dialog-in !important;
+  animation-duration: 0.2s !important;
+  animation-timing-function: ease !important;
+  animation-fill-mode: both !important;
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Closing uses the reversed keyframe via the component's own exit mechanism;
+   shorten its duration so it stays snappy */
+md-dialog {
+  --md-dialog-opening-transition-duration: 0.2s;
+  --md-dialog-closing-transition-duration: 0.15s;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--md-ref-typeface-plain, 'Roboto', sans-serif);
+  background: var(--md-sys-color-surface, #fafafa);
+  color: var(--md-sys-color-on-surface, #222222);
+}
+
+#app {
+  height: 100%;
+}
+
+/* ---- Login layout ---- */
+
+.login-layout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--app-login-bg, #2d2b4f);
+}
+
+.login-card {
+  background: var(--app-login-card-bg, #ffffff);
+  border-radius: 6px;
+  box-shadow: var(--shadow-5);
+  padding: var(--size-8, 2rem);
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4, 1rem);
+}
+
+.login-card__header {
+  text-align: center;
+  margin-bottom: var(--size-2, 0.5rem);
+}
+
+.login-card__title {
+  font-size: var(--font-size-3, 1.25rem);
+  font-weight: 600;
+  margin: 0 0 var(--size-1, 0.25rem);
+  color: var(--app-topbar-bg, #303845);
+  letter-spacing: 0.01em;
+}
+
+.login-card__subtitle {
+  font-size: var(--font-size-1, 0.875rem);
+  color: var(--md-sys-color-outline, #74777f);
+  margin: 0;
+}
+
+.login-card__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4, 1rem);
+}
+
+.login-card__fields md-filled-text-field {
+  width: 100%;
+}
+
+.login-card__error {
+  color: var(--md-sys-color-error, #ba1a1a);
+  font-size: var(--font-size-0, 0.8rem);
+  min-height: 1.2em;
+  margin: 0;
+}
+
+.login-card__actions md-filled-button {
+  width: 100%;
+}
+
+.login-card__footer {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--size-3, 12px);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  margin-top: var(--size-3, 12px);
+  /* Use inverted colors so the switcher shows against the white card */
+  --lang-switcher-color: var(--app-topbar-bg);
+}
+
+.login-card__footer .lang-switcher__btn {
+  color: var(--app-topbar-bg);
+  border-color: transparent;
+  opacity: 0.5;
+}
+
+.login-card__footer .lang-switcher__btn:hover {
+  background: rgba(48, 56, 69, 0.08);
+  opacity: 1;
+}
+
+.login-card__footer .lang-switcher__btn--active {
+  opacity: 1;
+  border-color: rgba(48, 56, 69, 0.35);
+}
+
+/* ---- App layout ---- */
+
+.app-layout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* -- Top Bar -- */
+
+.app-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--app-topbar-height, 56px);
+  background: var(--app-topbar-bg, #1e2336);
+  color: var(--app-topbar-color, #dde3f5);
+  display: flex;
+  align-items: center;
+  gap: var(--size-2, 0.5rem);
+  padding: 0 var(--size-4, 1rem);
+  z-index: 100;
+  box-shadow: var(--shadow-2);
+}
+
+.app-topbar__title {
+  font-size: var(--font-size-2, 1rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: inherit;
+  white-space: nowrap;
+  margin-right: var(--size-3, 0.75rem);
+}
+
+.app-topbar__sections {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1, 0.25rem);
+  flex: 1;
+}
+
+.app-topbar__separator {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
+  margin: 0 0.25rem;
+}
+
+.app-topbar__section-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--app-topbar-color, #dde3f5);
+  padding: var(--size-2, 0.5rem) var(--size-3, 0.75rem);
+  border-radius: 6px;
+  font-size: var(--font-size-1, 0.875rem);
+  font-family: inherit;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  gap: var(--size-1, 0.25rem);
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.app-topbar__section-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+  --md-icon-size: 18px;
+}
+
+.app-topbar__section-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-topbar__section-btn--active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+  font-weight: 500;
+}
+
+.app-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1, 0.25rem);
+  margin-left: auto;
+}
+
+.app-topbar__username {
+  font-size: var(--font-size-0, 0.8rem);
+  opacity: 0.75;
+  padding: 0 var(--size-2, 0.5rem);
+}
+
+.app-topbar__icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  padding: var(--size-2, 0.5rem);
+  border-radius: var(--radius-round, 50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.app-topbar__icon-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* -- App body: sidebar + main -- */
+
+.app-body {
+  display: flex;
+  flex-direction: row;
+  padding-top: var(--app-topbar-height, 56px);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* -- Sidebar -- */
+
+.app-sidebar {
+  width: var(--app-sidebar-width, 240px);
+  flex-shrink: 0;
+  background: var(--app-sidebar-bg, #f5f6fa);
+  border-right: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: var(--size-2, 0.5rem) 0;
+  transition: width 0.2s ease;
+}
+
+.app-sidebar--collapsed {
+  width: 56px;
+}
+
+/* Collapse toggle pinned at the top */
+.app-sidebar__collapse {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--size-1, 0.25rem) var(--size-2, 0.5rem) var(--size-2, 0.5rem);
+}
+
+.app-sidebar--collapsed .app-sidebar__collapse {
+  justify-content: center;
+}
+
+.app-sidebar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--size-1, 0.25rem);
+}
+
+.app-sidebar__group--top {
+  flex: 1;
+}
+
+.app-sidebar__group--bottom {
+  padding-bottom: var(--size-2, 0.5rem);
+  border-top: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
+  padding-top: var(--size-2, 0.5rem);
+  margin-top: var(--size-2, 0.5rem);
+}
+
+.app-sidebar__empty {
+  padding: var(--size-4, 1rem);
+  font-size: var(--font-size-0, 0.8rem);
+  color: var(--md-sys-color-outline, #74777f);
+  text-align: center;
+  margin: 0;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2, 0.5rem);
+  padding: var(--size-3, 0.75rem) var(--size-3, 0.75rem);
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--font-size-1, 0.875rem);
+  font-family: inherit;
+  color: var(--app-sidebar-color, #1a1c2e);
+  border-radius: var(--radius-2, 6px);
+  white-space: nowrap;
+  overflow: hidden;
+  transition: color 0.15s ease;
+  position: relative;
+}
+
+/* Inset highlight so it doesn't fill edge-to-edge */
+.sidebar-item::before {
+  content: '';
+  position: absolute;
+  inset: 2px 4px;
+  border-radius: 6px;
+  pointer-events: none;
+  transition: background 0.15s ease;
+}
+
+.sidebar-item__icon {
+  flex-shrink: 0;
+  font-size: 20px;
+  --md-icon-size: 20px;
+}
+
+.sidebar-item__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.15s ease;
+}
+
+.app-sidebar--collapsed .sidebar-item__label {
+  opacity: 0;
+  width: 0;
+  pointer-events: none;
+}
+
+.app-sidebar--collapsed .sidebar-item {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+
+.app-sidebar--collapsed .app-sidebar__group {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sidebar-item:hover::before {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.sidebar-item--active::before {
+  background: rgba(31, 105, 224, 0.12);
+}
+
+.sidebar-item--active {
+  color: #1f69e0;
+  font-weight: 500;
+}
+
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--app-sidebar-color, #222222);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-round, 50%);
+  opacity: 0.45;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  padding: 0;
+}
+
+.sidebar-collapse-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* -- Main content -- */
+
+.app-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--size-6, 1.5rem);
+  background: var(--md-sys-color-surface, #fafafa);
+}
+
+.app-main--fullscreen {
+  padding: 0;
+  overflow: hidden;
+}

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools_scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "composegtfs-backend"
+dynamic = ["version"]
+description = "composegtfs – FastAPI backend service"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "psycopg2-binary>=2.9",
+    "pydantic-settings>=2.2",
+    "pydantic[email]>=2.6",
+    "bcrypt>=4.1",
+    "PyJWT>=2.8",
+    "python-multipart>=0.0.9",
+    "slowapi>=0.1.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+root = ".."
+write_to = "backend/src/app/_version.py"

@@ -1,0 +1,35 @@
+@import 'open-props/style';
+
+:root {
+  /* MD3 color tokens */
+  --md-sys-color-primary: #1f69e0;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #d6e4ff;
+  --md-sys-color-on-primary-container: #001b4d;
+  --md-sys-color-secondary-container: #e4e1f9;
+  --md-sys-color-on-secondary-container: #222222;
+  --md-sys-color-surface: #fafafa;
+  --md-sys-color-surface-container: #f0f0f7;
+  --md-sys-color-on-surface: #222222;
+  --md-sys-color-outline: #74777f;
+  --md-sys-color-outline-variant: #c4c6d0;
+  --md-sys-color-error: #ba1a1a;
+
+  /* MD3 typography tokens */
+  --md-ref-typeface-brand: 'Roboto', sans-serif;
+  --md-ref-typeface-plain: 'Roboto', sans-serif;
+
+  /* App-specific tokens */
+  --app-primary-color: #303845;
+  --app-topbar-bg: #303845;
+  --app-topbar-color: #ffffff;
+  --app-topbar-height: 56px;
+  --app-sidebar-width: 240px;
+  --app-sidebar-bg: #f5f5fa;
+  --app-sidebar-color: #222222;
+
+  /* Login-specific tokens (derived from TopBar palette) */
+  --app-login-bg: #303845;
+  --app-login-card-bg: #ffffff;
+  --app-login-accent: #ffffff;
+}
