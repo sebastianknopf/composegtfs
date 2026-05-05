@@ -13,6 +13,7 @@ from app.routers import users as users_router
 from app.routers import versions as versions_router
 from app.routers import agencies as agencies_router
 from app.routers.calendars import aux_calendars_router, calendars_router
+from app.routers import stops as stops_router
 
 app = FastAPI(
     title="composegtfs",
@@ -43,6 +44,7 @@ app.include_router(versions_router.router)
 app.include_router(agencies_router.router)
 app.include_router(calendars_router)
 app.include_router(aux_calendars_router)
+app.include_router(stops_router.router)
 
 
 @app.get("/api/health")

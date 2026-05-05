@@ -125,6 +125,15 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
             PermissionDef("calendar:delete", "permissions.calendar.delete"),
         ],
     ),
+    PermissionGroup(
+        key="stops",
+        lang_key="permissions._groups.stops",
+        permissions=[
+            PermissionDef("stops:read",   "permissions.stops.read"),
+            PermissionDef("stops:write",  "permissions.stops.write"),
+            PermissionDef("stops:delete", "permissions.stops.delete"),
+        ],
+    ),
 ]
 
 # Flat set of all valid codenames — used for validation on write
@@ -178,6 +187,11 @@ class Permission(str, Enum):
     CALENDAR_READ   = "calendar:read"
     CALENDAR_WRITE  = "calendar:write"
     CALENDAR_DELETE = "calendar:delete"
+
+    # Stops (GTFS)
+    STOPS_READ   = "stops:read"
+    STOPS_WRITE  = "stops:write"
+    STOPS_DELETE = "stops:delete"
 
 
 # ---------------------------------------------------------------------------

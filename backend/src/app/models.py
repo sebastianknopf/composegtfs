@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, ForeignKeyConstraint, Integer, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -95,6 +95,7 @@ class Version(Base):
     agencies = relationship("Agency", back_populates="version", cascade="all, delete-orphan")
     calendars = relationship("Calendar", back_populates="version", cascade="all, delete-orphan")
     aux_calendars = relationship("AuxCalendar", back_populates="version", cascade="all, delete-orphan")
+    stops = relationship("Stop", back_populates="version", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -222,5 +223,50 @@ class CalendarAuxCalendar(Base):
             ["calendars.version_id", "calendars.service_id"],
             name="fk_cal_aux_cal_calendar",
             ondelete="CASCADE",
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stops  — GTFS stops.txt entities, scoped to a Version
+#
+# Hierarchy:
+#   Stop (station / top-level, parent_station IS NULL)
+#     └─ Platform (Steig, location_type=0, parent_station = parent stop_id)
+# ---------------------------------------------------------------------------
+
+class Stop(Base):
+    __tablename__ = "stops"
+
+    version_id          = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    stop_id             = Column(String(255), primary_key=True)
+
+    stop_code           = Column(String(255),  nullable=True)
+    stop_name           = Column(Text,         nullable=True)
+    tts_stop_name       = Column(Text,         nullable=True)
+    stop_desc           = Column(Text,         nullable=True)
+    stop_lat            = Column(Float,        nullable=True)
+    stop_lon            = Column(Float,        nullable=True)
+    zone_id             = Column(String(255),  nullable=True)
+    stop_url            = Column(String(2048), nullable=True)
+    location_type       = Column(SmallInteger, nullable=True)
+    parent_station      = Column(String(255),  nullable=True)
+    stop_timezone       = Column(String(64),   nullable=True)
+    wheelchair_boarding = Column(SmallInteger, nullable=True)
+    level_id            = Column(String(255),  nullable=True)
+    platform_code       = Column(String(255),  nullable=True)
+    stop_access         = Column(SmallInteger, nullable=True)
+
+    version = relationship("Version", back_populates="stops")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "parent_station"],
+            ["stops.version_id", "stops.stop_id"],
+            name="fk_stops_parent_station",
+            ondelete="CASCADE",
+            use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
         ),
     )

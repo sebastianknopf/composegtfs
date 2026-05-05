@@ -158,6 +158,20 @@ export const api = {
     removeAssignment: (versionId, serviceId, auxCalendarId)     => request('DELETE', `/versions/${versionId}/calendars/${serviceId}/aux-calendars/${auxCalendarId}`),
   },
 
+  stops: {
+    list:               (versionId)                              => request('GET',    `/versions/${versionId}/stops`),
+    listAllPlatforms:   (versionId)                              => request('GET',    `/versions/${versionId}/stops/all-platforms`),
+    create:             (versionId, data)                        => request('POST',   `/versions/${versionId}/stops`, data),
+    get:                (versionId, stopId)                      => request('GET',    `/versions/${versionId}/stops/${stopId}`),
+    update:             (versionId, stopId, data)                => request('PUT',    `/versions/${versionId}/stops/${stopId}`, data),
+    delete:             (versionId, stopId)                      => request('DELETE', `/versions/${versionId}/stops/${stopId}`),
+    listPlatforms:      (versionId, stopId)                      => request('GET',    `/versions/${versionId}/stops/${stopId}/platforms`),
+    createPlatform:     (versionId, stopId, data)                => request('POST',   `/versions/${versionId}/stops/${stopId}/platforms`, data),
+    getPlatform:        (versionId, stopId, platformId)          => request('GET',    `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`),
+    updatePlatform:     (versionId, stopId, platformId, data)    => request('PUT',    `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`, data),
+    deletePlatform:     (versionId, stopId, platformId)          => request('DELETE', `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`),
+  },
+
   auxCalendars: {
     list:       (versionId)                        => request('GET',    `/versions/${versionId}/aux-calendars`),
     create:     (versionId, data)                  => request('POST',   `/versions/${versionId}/aux-calendars`, data),
