@@ -116,6 +116,15 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
             PermissionDef("agency:delete", "permissions.agency.delete"),
         ],
     ),
+    PermissionGroup(
+        key="calendar",
+        lang_key="permissions._groups.calendar",
+        permissions=[
+            PermissionDef("calendar:read",   "permissions.calendar.read"),
+            PermissionDef("calendar:write",  "permissions.calendar.write"),
+            PermissionDef("calendar:delete", "permissions.calendar.delete"),
+        ],
+    ),
 ]
 
 # Flat set of all valid codenames — used for validation on write
@@ -164,6 +173,11 @@ class Permission(str, Enum):
     AGENCY_READ   = "agency:read"
     AGENCY_WRITE  = "agency:write"
     AGENCY_DELETE = "agency:delete"
+
+    # Calendar (GTFS)
+    CALENDAR_READ   = "calendar:read"
+    CALENDAR_WRITE  = "calendar:write"
+    CALENDAR_DELETE = "calendar:delete"
 
 
 # ---------------------------------------------------------------------------

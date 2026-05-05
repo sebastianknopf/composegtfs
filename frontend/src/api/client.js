@@ -147,6 +147,28 @@ export const api = {
     delete: (versionId, agencyId)    => request('DELETE', `/versions/${versionId}/agencies/${agencyId}`),
   },
 
+  calendars: {
+    list:   (versionId)                        => request('GET',    `/versions/${versionId}/calendars`),
+    create: (versionId, data)                  => request('POST',   `/versions/${versionId}/calendars`, data),
+    get:    (versionId, serviceId)             => request('GET',    `/versions/${versionId}/calendars/${serviceId}`),
+    update: (versionId, serviceId, data)       => request('PUT',    `/versions/${versionId}/calendars/${serviceId}`, data),
+    delete: (versionId, serviceId)             => request('DELETE', `/versions/${versionId}/calendars/${serviceId}`),
+    listAssignments:  (versionId, serviceId)                    => request('GET',    `/versions/${versionId}/calendars/${serviceId}/aux-calendars`),
+    assignAuxCalendar:(versionId, serviceId, data)              => request('POST',   `/versions/${versionId}/calendars/${serviceId}/aux-calendars`, data),
+    removeAssignment: (versionId, serviceId, auxCalendarId)     => request('DELETE', `/versions/${versionId}/calendars/${serviceId}/aux-calendars/${auxCalendarId}`),
+  },
+
+  auxCalendars: {
+    list:       (versionId)                        => request('GET',    `/versions/${versionId}/aux-calendars`),
+    create:     (versionId, data)                  => request('POST',   `/versions/${versionId}/aux-calendars`, data),
+    get:        (versionId, auxCalendarId)         => request('GET',    `/versions/${versionId}/aux-calendars/${auxCalendarId}`),
+    update:     (versionId, auxCalendarId, data)   => request('PUT',    `/versions/${versionId}/aux-calendars/${auxCalendarId}`, data),
+    delete:     (versionId, auxCalendarId)         => request('DELETE', `/versions/${versionId}/aux-calendars/${auxCalendarId}`),
+    listDates:  (versionId, auxCalendarId)         => request('GET',    `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates`),
+    addDates:   (versionId, auxCalendarId, data)   => request('POST',   `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates`, data),
+    deleteDate: (versionId, auxCalendarId, date)   => request('DELETE', `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates/${date}`),
+  },
+
   /**
    * Login via OAuth2 password flow (application/x-www-form-urlencoded).
    * Returns { access_token, token_type }.

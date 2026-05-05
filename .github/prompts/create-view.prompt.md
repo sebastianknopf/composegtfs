@@ -141,12 +141,23 @@ onMounted(loadItems)
 
 ## Grundstruktur mit Sub-Perspektiven
 
-Wenn die Ansicht mehrere Tabs hat, wird ein Tab-Control analog zur `AccountsView` verwendet:
+Wenn die Ansicht mehrere Tabs hat, wird ein Tab-Control analog zur `AccountsView` verwendet.
+
+**Wichtig:** Tab-Labels dürfen **nicht** per Template-Literal `t(\`resource.tab_${p}\`)` aufgelöst werden, weil Vue beim `v-for` den reaktiven Kontext dafür nicht zuverlässig aufbaut. Stattdessen wird der Label-Text pro Perspektive explizit per Ternary- oder Map-Lookup ermittelt:
 
 ```vue
 <script setup>
 const PERSPECTIVES = ['items', 'subitems']
 const activePerspective = ref('items')
+
+const PERSPECTIVE_LABELS = {
+  items:    () => t('resource.tab_items'),
+  subitems: () => t('resource.tab_subitems'),
+}
+const PERSPECTIVE_ICONS = {
+  items:    'list',
+  subitems: 'category',
+}
 
 const itemColumns    = [ /* Spalten für Perspektive 1 */ ]
 const subitemColumns = [ /* Spalten für Perspektive 2 */ ]
@@ -163,8 +174,8 @@ const subitemColumns = [ /* Spalten für Perspektive 2 */ ]
       :class="['perspective-tab', { 'perspective-tab--active': activePerspective === p }]"
       @click="activePerspective = p"
     >
-      <md-icon class="perspective-tab__icon">{{ p === 'items' ? 'list' : 'category' }}</md-icon>
-      {{ t(`resource.tab_${p}`) }}
+      <md-icon class="perspective-tab__icon">{{ PERSPECTIVE_ICONS[p] }}</md-icon>
+      {{ PERSPECTIVE_LABELS[p]() }}
     </button>
   </div>
 
@@ -172,6 +183,9 @@ const subitemColumns = [ /* Spalten für Perspektive 2 */ ]
   <DataTable v-if="activePerspective === 'subitems'" ... />
 </template>
 ```
+
+I18n-Schlüssel, die jede Ansicht mit Sub-Perspektiven braucht (zusätzlich zu den übrigen Schlüsseln):
+- `resource.tab_{perspektivename}` — Label des jeweiligen Tabs (für jede Perspektive)
 
 ## Bestätigungsdialoge für gefährliche Aktionen
 

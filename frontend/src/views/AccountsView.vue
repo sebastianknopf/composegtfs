@@ -362,45 +362,6 @@ async function handleConfirmDelete() {
   height: 100%;
 }
 
-/* Perspective tabs */
-.perspective-tabs {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant, #e0e0e0);
-}
-
-.perspective-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 1rem;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  cursor: pointer;
-  font-size: var(--font-size-1, 0.875rem);
-  font-family: inherit;
-  font-weight: 500;
-  color: var(--md-sys-color-on-surface-variant, #5c5f6a);
-  transition: color 0.15s ease, border-color 0.15s ease;
-  white-space: nowrap;
-}
-
-.perspective-tab:hover {
-  color: var(--md-sys-color-on-surface, #222);
-}
-
-.perspective-tab--active {
-  color: var(--md-sys-color-primary, #1f69e0);
-  border-bottom-color: var(--md-sys-color-primary, #1f69e0);
-}
-
-.perspective-tab__icon {
-  font-size: 1rem;
-  --md-icon-size: 1rem;
-}
-
 /* Status badges */
 .status-badge {
   display: inline-flex;

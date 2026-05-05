@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, ForeignKeyConstraint, Integer, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -93,6 +93,8 @@ class Version(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
 
     agencies = relationship("Agency", back_populates="version", cascade="all, delete-orphan")
+    calendars = relationship("Calendar", back_populates="version", cascade="all, delete-orphan")
+    aux_calendars = relationship("AuxCalendar", back_populates="version", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -115,3 +117,110 @@ class Agency(Base):
     cemv_support    = Column(Integer, nullable=True)
 
     version = relationship("Version", back_populates="agencies")
+
+
+# ---------------------------------------------------------------------------
+# Calendars  — GTFS calendar.txt entities, scoped to a Version
+# ---------------------------------------------------------------------------
+
+class Calendar(Base):
+    __tablename__ = "calendars"
+
+    version_id = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    service_id = Column(String(255), primary_key=True)
+    name       = Column(String(255), nullable=True)
+
+    monday    = Column(SmallInteger, nullable=False)
+    tuesday   = Column(SmallInteger, nullable=False)
+    wednesday = Column(SmallInteger, nullable=False)
+    thursday  = Column(SmallInteger, nullable=False)
+    friday    = Column(SmallInteger, nullable=False)
+    saturday  = Column(SmallInteger, nullable=False)
+    sunday    = Column(SmallInteger, nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date   = Column(Date, nullable=False)
+
+    version = relationship("Version", back_populates="calendars")
+    aux_calendar_assignments = relationship(
+        "CalendarAuxCalendar",
+        back_populates="calendar",
+        cascade="all, delete-orphan",
+    )
+
+
+# ---------------------------------------------------------------------------
+# AuxCalendars  — Hilfskalender, a named list of explicit dates, scoped to a Version
+# ---------------------------------------------------------------------------
+
+class AuxCalendar(Base):
+    __tablename__ = "aux_calendars"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version_id = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), nullable=False)
+    name       = Column(String(255), nullable=False)
+
+    version = relationship("Version", back_populates="aux_calendars")
+    dates = relationship(
+        "AuxCalendarDate",
+        back_populates="aux_calendar",
+        cascade="all, delete-orphan",
+    )
+    calendar_assignments = relationship(
+        "CalendarAuxCalendar",
+        back_populates="aux_calendar",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("version_id", "name", name="uq_aux_calendars_version_name"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# AuxCalendarDates  — individual date entries belonging to an AuxCalendar
+# ---------------------------------------------------------------------------
+
+class AuxCalendarDate(Base):
+    __tablename__ = "aux_calendar_dates"
+
+    aux_calendar_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("aux_calendars.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    date = Column(Date, primary_key=True)
+
+    aux_calendar = relationship("AuxCalendar", back_populates="dates")
+
+
+# ---------------------------------------------------------------------------
+# CalendarAuxCalendar  — junction: assigns AuxCalendars to Calendars (Tagesarten)
+# ---------------------------------------------------------------------------
+
+class CalendarAuxCalendar(Base):
+    __tablename__ = "calendar_aux_calendars"
+
+    version_id      = Column(UUID(as_uuid=True), primary_key=True)
+    service_id      = Column(String(255), primary_key=True)
+    aux_calendar_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("aux_calendars.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # 1 = additional (zusätzlich), 2 = not (nicht)
+    junction_type = Column(SmallInteger, nullable=False)
+
+    calendar = relationship(
+        "Calendar",
+        back_populates="aux_calendar_assignments",
+    )
+    aux_calendar = relationship("AuxCalendar", back_populates="calendar_assignments")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "service_id"],
+            ["calendars.version_id", "calendars.service_id"],
+            name="fk_cal_aux_cal_calendar",
+            ondelete="CASCADE",
+        ),
+    )

@@ -35,7 +35,8 @@ const sections = [
     icon: 'storage',
     defaultView: 'agency',
     views: [
-      { id: 'agency',   labelKey: 'views.agency',   icon: 'business',  position: 'top' },
+      { id: 'agency',    labelKey: 'views.agency',    icon: 'business',      position: 'top' },
+      { id: 'calendar',  labelKey: 'views.calendar',  icon: 'calendar_month', position: 'top' },
       { id: 'accounts', labelKey: 'views.accounts', icon: 'group',     position: 'bottom', permission: 'accounts:read' },
       { id: 'settings', labelKey: 'views.settings', icon: 'settings',  position: 'bottom', permission: 'settings:read' },
     ],
@@ -127,9 +128,9 @@ function onLogout() {
       />
       <main :class="['app-main', { 'app-main--fullscreen': isFullscreen }]">
         <ForbiddenView v-if="forbiddenState" @back="router.back()" />
-        <RouterView v-else v-slot="{ Component }">
+        <RouterView v-show="!forbiddenState" v-slot="{ Component }">
           <KeepAlive>
-            <component :is="Component" :key="$route.name" />
+            <component :is="Component" />
           </KeepAlive>
         </RouterView>
       </main>
