@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_session
-from app.models import Agency, User, Version
+from app.models import Agency, Route, User, Version
 from app.permissions import Permission, require
 
 router = APIRouter(prefix="/api/versions/{version_id}/agencies", tags=["agencies"])
@@ -313,5 +313,18 @@ async def delete_agency(
 ) -> None:
     await _get_version_or_404(version_id, session)
     agency = await _get_agency_or_404(version_id, agency_id, session)
+    # Null out agency_id on routes referencing this agency before deleting.
+    # The composite FK (version_id, agency_id) → agencies uses ON DELETE SET NULL,
+    # but PostgreSQL cannot NULL version_id (NOT NULL). Clear it manually instead.
+    await session.execute(
+        select(Route)
+        .where(Route.version_id == version_id, Route.agency_id == agency_id)
+    )  # warm up ORM identity map
+    from sqlalchemy import update as sa_update
+    await session.execute(
+        sa_update(Route)
+        .where(Route.version_id == version_id, Route.agency_id == agency_id)
+        .values(agency_id=None)
+    )
     await session.delete(agency)
     await session.commit()

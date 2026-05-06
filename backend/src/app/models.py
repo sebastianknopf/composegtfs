@@ -96,6 +96,7 @@ class Version(Base):
     calendars = relationship("Calendar", back_populates="version", cascade="all, delete-orphan")
     aux_calendars = relationship("AuxCalendar", back_populates="version", cascade="all, delete-orphan")
     stops = relationship("Stop", back_populates="version", cascade="all, delete-orphan")
+    routes = relationship("Route", back_populates="version", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -268,5 +269,41 @@ class Stop(Base):
             use_alter=True,
             deferrable=True,
             initially="DEFERRED",
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes  — GTFS routes.txt entities, scoped to a Version
+# ---------------------------------------------------------------------------
+
+class Route(Base):
+    __tablename__ = "routes"
+
+    version_id          = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    route_id            = Column(String(255), primary_key=True)
+
+    agency_id           = Column(String(255), nullable=True)
+    route_short_name    = Column(String(255), nullable=True)
+    route_long_name     = Column(String(255), nullable=True)
+    route_desc          = Column(Text,        nullable=True)
+    route_type          = Column(Integer,     nullable=False)
+    route_url           = Column(String(2048), nullable=True)
+    route_color         = Column(String(6),   nullable=True)
+    route_text_color    = Column(String(6),   nullable=True)
+    route_sort_order    = Column(Integer,     nullable=True)
+    continuous_pickup   = Column(SmallInteger, nullable=True)
+    continuous_drop_off = Column(SmallInteger, nullable=True)
+    network_id          = Column(String(255), nullable=True)
+    cemv_support        = Column(Integer,     nullable=True)
+
+    version = relationship("Version", back_populates="routes")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "agency_id"],
+            ["agencies.version_id", "agencies.agency_id"],
+            name="fk_routes_agency",
+            ondelete="SET NULL",
         ),
     )

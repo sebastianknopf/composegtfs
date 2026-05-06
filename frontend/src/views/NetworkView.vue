@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onActivated, onBeforeUnmount, ref, watch } from 'vue'
+import { onMounted, onActivated, onBeforeUnmount, ref, watch, computed } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useI18n } from 'vue-i18n'
@@ -11,13 +11,119 @@ import { toast } from '@/stores/toast.js'
 import StopEditPanel from '@/components/StopEditPanel.vue'
 import PlatformEditPanel from '@/components/PlatformEditPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import RoutesSideBar from '@/components/RoutesSideBar.vue'
+import RouteEditPanel from '@/components/RouteEditPanel.vue'
+import { routesStore } from '@/stores/routes.js'
 import '@material/web/icon/icon.js'
 
 const { t } = useI18n()
 const { has } = usePermissions()
-const canRead   = has('stops:read')
-const canWrite  = has('stops:write')
-const canDelete = has('stops:delete')
+const canRead        = has('stops:read')
+const canWrite       = has('stops:write')
+const canDelete      = has('stops:delete')
+const canReadRoutes   = has('routes:read')
+const canWriteRoutes  = has('routes:write')
+const canDeleteRoutes = has('routes:delete')
+
+// ---------------------------------------------------------------------------
+// Routes panel state
+// ---------------------------------------------------------------------------
+const routePanelVisible = ref(false)
+const editingRoute      = ref(null)
+const routePanelLoading = ref(false)
+const routePanelError   = ref(null)
+
+const versionId = computed(() => versionsStore.state.activeVersionId)
+
+// Pre-loaded agencies for the route edit panel (fetched before the panel opens)
+const preloadedAgencies = ref([])
+async function fetchAgenciesForPanel() {
+  if (!versionId.value) return
+  try {
+    preloadedAgencies.value = await api.routes.agenciesLookup(versionId.value)
+  } catch {
+    preloadedAgencies.value = []
+  }
+}
+
+async function openCreateRoutePanel() {
+  panelVisible.value = false
+  platformPanelVisible.value = false
+  editingRoute.value      = null
+  routePanelError.value   = null
+  await fetchAgenciesForPanel()
+  routePanelVisible.value = true
+}
+
+async function openEditRoutePanel(route) {
+  panelVisible.value = false
+  platformPanelVisible.value = false
+  editingRoute.value      = route
+  routePanelError.value   = null
+  await fetchAgenciesForPanel()
+  routePanelVisible.value = true
+}
+
+async function handleRouteSave(data) {
+  routePanelLoading.value = true
+  routePanelError.value   = null
+  try {
+    if (editingRoute.value) {
+      await api.routes.update(versionId.value, editingRoute.value.route_id, data)
+    } else {
+      await api.routes.create(versionId.value, data)
+    }
+    routePanelVisible.value = false
+    await routesStore.load(versionId.value)
+  } catch (err) {
+    const msg = err?.response?.data?.detail ?? t('routes.error_generic')
+    routePanelError.value = Array.isArray(msg) ? msg.map(e => e.msg).join('; ') : msg
+  } finally {
+    routePanelLoading.value = false
+  }
+}
+
+const routeConfirmOpen    = ref(false)
+const routeConfirmTitle   = ref('')
+const routeConfirmMessage = ref('')
+
+async function handleRouteReorder(orderedRoutes) {
+  const vid = versionId.value
+  if (!vid) return
+  for (let i = 0; i < orderedRoutes.length; i++) {
+    const route = orderedRoutes[i]
+    if (route.route_sort_order !== i) {
+      try {
+        await api.routes.update(vid, route.route_id, { route_sort_order: i })
+      } catch {
+        toast.error(t('routes.error_generic'))
+      }
+    }
+  }
+  await routesStore.load(vid)
+}
+
+function handleRouteDeleteRequest() {
+  routeConfirmTitle.value   = t('routes.delete_confirm_title')
+  routeConfirmMessage.value = t('routes.delete_confirm_message')
+  routeConfirmOpen.value    = true
+}
+
+async function handleRouteDeleteConfirmed() {
+  if (!editingRoute.value) return
+  routePanelLoading.value = true
+  routePanelError.value   = null
+  try {
+    await api.routes.delete(versionId.value, editingRoute.value.route_id)
+    routePanelVisible.value = false
+    await routesStore.load(versionId.value)
+  } catch (err) {
+    const msg = err?.response?.data?.detail ?? t('routes.error_generic')
+    routePanelError.value = Array.isArray(msg) ? msg.map(e => e.msg).join('; ') : msg
+  } finally {
+    routePanelLoading.value = false
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Map
@@ -385,6 +491,7 @@ const panelLoading = ref(false)
 const panelError   = ref(null)
 
 function openCreatePanel(lat, lon) {
+  routePanelVisible.value = false
   editingStop.value  = null
   initLat.value      = lat
   initLon.value      = lon
@@ -393,6 +500,7 @@ function openCreatePanel(lat, lon) {
 }
 
 function openEditPanel(stop, { zoom = true } = {}) {
+  routePanelVisible.value = false
   editingStop.value  = stop
   panelError.value   = null
   panelVisible.value = true
@@ -764,6 +872,9 @@ onMounted(async () => {
     addStopLayers()
     attachMarkerInteraction()
     loadStops()
+    if (canReadRoutes.value) {
+      routesStore.load(versionsStore.state.activeVersionId)
+    }
   })
 
   map.on('contextmenu', (e) => {
@@ -804,11 +915,27 @@ onBeforeUnmount(() => {
 // Reload stops when the active version changes
 watch(() => versionsStore.state.activeVersionId, () => {
   loadStops()
+  if (canReadRoutes.value) {
+    routesStore.load(versionsStore.state.activeVersionId)
+  } else {
+    routesStore.reset()
+  }
 })
 </script>
 
 <template>
   <div class="network-view">
+
+    <!-- Routes sidebar (left) -->
+    <RoutesSideBar
+      v-if="canReadRoutes"
+      :can-write="canWriteRoutes"
+      :can-read="canReadRoutes"
+      section-id="routes"
+      @add-route="openCreateRoutePanel"
+      @route-select="openEditRoutePanel"
+      @reorder="handleRouteReorder"
+    />
 
     <!-- Map container fills remaining space -->
     <div ref="mapContainer" class="network-map" />
@@ -877,6 +1004,30 @@ watch(() => versionsStore.state.activeVersionId, () => {
       :cancel-label="t('stops.cancel')"
       :danger="true"
       @confirm="handleDeleteConfirmed"
+    />
+
+    <!-- Route edit panel -->
+    <RouteEditPanel
+      v-model="routePanelVisible"
+      :route="editingRoute"
+      :loading="routePanelLoading"
+      :server-error="routePanelError"
+      :can-delete="canDeleteRoutes"
+      :readonly="!canWriteRoutes"
+      :agencies="preloadedAgencies"
+      @save="handleRouteSave"
+      @delete="handleRouteDeleteRequest"
+    />
+
+    <!-- Delete confirm: route -->
+    <ConfirmDialog
+      v-model="routeConfirmOpen"
+      :title="routeConfirmTitle"
+      :message="routeConfirmMessage"
+      :confirm-label="t('routes.delete')"
+      :cancel-label="t('routes.cancel')"
+      :danger="true"
+      @confirm="handleRouteDeleteConfirmed"
     />
 
     <!-- Delete confirm: platform -->

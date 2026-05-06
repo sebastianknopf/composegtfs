@@ -158,6 +158,15 @@ export const api = {
     removeAssignment: (versionId, serviceId, auxCalendarId)     => request('DELETE', `/versions/${versionId}/calendars/${serviceId}/aux-calendars/${auxCalendarId}`),
   },
 
+  routes: {
+    list:            (versionId)              => request('GET',    `/versions/${versionId}/routes`),
+    create:          (versionId, data)        => request('POST',   `/versions/${versionId}/routes`, data),
+    get:             (versionId, routeId)     => request('GET',    `/versions/${versionId}/routes/${routeId}`),
+    update:          (versionId, routeId, data) => request('PUT',  `/versions/${versionId}/routes/${routeId}`, data),
+    delete:          (versionId, routeId)     => request('DELETE', `/versions/${versionId}/routes/${routeId}`),
+    agenciesLookup:  (versionId)             => request('GET',    `/versions/${versionId}/routes/agencies`),
+  },
+
   stops: {
     list:               (versionId)                              => request('GET',    `/versions/${versionId}/stops`),
     listAllPlatforms:   (versionId)                              => request('GET',    `/versions/${versionId}/stops/all-platforms`),

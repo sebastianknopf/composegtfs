@@ -40,6 +40,12 @@ function _storeToken(token) {
 // ---- Public API ----
 
 function isAuthenticated() {
+  // Re-sync with localStorage in case client.js silently refreshed the token
+  // via the X-New-Token header from the sliding-token middleware.
+  const stored = localStorage.getItem(_TOKEN_KEY)
+  if (stored && stored !== state.token) {
+    state.token = stored
+  }
   if (!state.token) return false
   if (_isExpired(state.token)) {
     state.token = null

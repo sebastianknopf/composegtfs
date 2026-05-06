@@ -134,6 +134,15 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
             PermissionDef("stops:delete", "permissions.stops.delete"),
         ],
     ),
+    PermissionGroup(
+        key="routes",
+        lang_key="permissions._groups.routes",
+        permissions=[
+            PermissionDef("routes:read",   "permissions.routes.read"),
+            PermissionDef("routes:write",  "permissions.routes.write"),
+            PermissionDef("routes:delete", "permissions.routes.delete"),
+        ],
+    ),
 ]
 
 # Flat set of all valid codenames — used for validation on write
@@ -192,6 +201,11 @@ class Permission(str, Enum):
     STOPS_READ   = "stops:read"
     STOPS_WRITE  = "stops:write"
     STOPS_DELETE = "stops:delete"
+
+    # Routes (GTFS)
+    ROUTES_READ   = "routes:read"
+    ROUTES_WRITE  = "routes:write"
+    ROUTES_DELETE = "routes:delete"
 
 
 # ---------------------------------------------------------------------------
