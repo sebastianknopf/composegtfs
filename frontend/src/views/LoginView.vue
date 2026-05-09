@@ -5,7 +5,7 @@ import { ref, onMounted } from 'vue'
 import { authStore } from '@/stores/auth.js'
 import { settingsStore } from '@/stores/settings.js'
 import LangSwitcher from '@/components/LangSwitcher.vue'
-import '@material/web/textfield/filled-text-field.js'
+import '@material/web/textfield/outlined-text-field.js'
 import '@material/web/button/filled-button.js'
 
 const router = useRouter()
@@ -39,7 +39,7 @@ async function handleLogin(event) {
       </header>
 
       <form class="login-card__fields" novalidate @submit="handleLogin" @keydown.enter.prevent="handleLogin">
-        <md-filled-text-field
+        <md-outlined-text-field
           ref="usernameRef"
           :label="t('login.username')"
           type="text"
@@ -47,7 +47,7 @@ async function handleLogin(event) {
           autocomplete="username"
           required
         />
-        <md-filled-text-field
+        <md-outlined-text-field
           ref="passwordRef"
           :label="t('login.password')"
           type="password"

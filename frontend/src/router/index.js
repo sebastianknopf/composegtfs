@@ -6,6 +6,7 @@ import CalendarView from '@/views/CalendarView.vue'
 import AccountsView from '@/views/AccountsView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import NetworkView from '@/views/NetworkView.vue'
+import ScheduleView from '@/views/ScheduleView.vue'
 import VersionsView from '@/views/VersionsView.vue'
 import { authStore } from '@/stores/auth.js'
 import { permissionsStore } from '@/stores/permissions.js'
@@ -54,6 +55,12 @@ const routes = [
         name: 'network',
         component: NetworkView,
         meta: { section: 'network', fullscreen: true, permission: 'network:read' },
+      },
+      {
+        path: 'schedule',
+        name: 'schedule',
+        component: ScheduleView,
+        meta: { section: 'schedule', fullscreen: true, permission: 'schedule:read' },
       },
       {
         path: 'versions',

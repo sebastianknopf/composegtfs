@@ -97,6 +97,8 @@ class Version(Base):
     aux_calendars = relationship("AuxCalendar", back_populates="version", cascade="all, delete-orphan")
     stops = relationship("Stop", back_populates="version", cascade="all, delete-orphan")
     routes = relationship("Route", back_populates="version", cascade="all, delete-orphan")
+    route_band_stops = relationship("RouteBandStop", back_populates="version", cascade="all, delete-orphan")
+    trips = relationship("Trip", back_populates="version", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +300,7 @@ class Route(Base):
     cemv_support        = Column(Integer,     nullable=True)
 
     version = relationship("Version", back_populates="routes")
+    trips = relationship("Trip", back_populates="route", cascade="all, delete-orphan")
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -305,5 +308,141 @@ class Route(Base):
             ["agencies.version_id", "agencies.agency_id"],
             name="fk_routes_agency",
             ondelete="SET NULL",
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# RouteBandStop  — defines the ordered sequence of stops (Steige) shown in the
+#                  Linienband for a given version / route / direction combo.
+#
+# direction: 0 = outbound (hin), 1 = inbound (rück)
+# sort_order: position of the stop in the band (0-based, ascending)
+# A stop may appear multiple times in the same band (e.g. circular routes);
+# uniqueness is enforced per position (version_id, route_id, direction, sort_order).
+# The entry is identified by a surrogate UUID so delete/reorder work unambiguously.
+# ---------------------------------------------------------------------------
+
+class RouteBandStop(Base):
+    __tablename__ = "route_band_stops"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version_id = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), nullable=False)
+    route_id   = Column(String(255), nullable=False)
+    direction  = Column(SmallInteger, nullable=False)  # 0=hin, 1=rück
+    stop_id    = Column(String(255), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    version = relationship("Version", back_populates="route_band_stops")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "route_id"],
+            ["routes.version_id", "routes.route_id"],
+            name="fk_route_band_stops_route",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["version_id", "stop_id"],
+            ["stops.version_id", "stops.stop_id"],
+            name="fk_route_band_stops_stop",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "version_id", "route_id", "direction", "sort_order",
+            name="uq_route_band_stops_position",
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trips  — GTFS trips.txt entities, scoped to a Version and Route.
+#
+# Composite PK: (version_id, trip_id) — trip_id is unique only within a version.
+# Referential integrity:
+#   - Deleting a version   → cascades to trips (via version_id FK)
+#   - Deleting a route     → cascades to trips (via composite FK on version/route)
+#   - Deleting a calendar  → sets service_id to NULL (app-level only; composite FKs
+#                            with SET NULL would also NULL version_id, so we skip the
+#                            DB-level FK on service_id and rely on app logic)
+# ---------------------------------------------------------------------------
+
+class Trip(Base):
+    __tablename__ = "trips"
+
+    version_id            = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    trip_id               = Column(String(255), primary_key=True)
+
+    route_id              = Column(String(255), nullable=False)
+    service_id            = Column(String(255), nullable=True)   # calendar ref; no DB FK (see above)
+    direction_id          = Column(SmallInteger, nullable=True)  # 0 = outbound, 1 = inbound
+    trip_short_name       = Column(String(255), nullable=True)
+    trip_headsign_id      = Column(String(255), nullable=True)   # placeholder; FK added later
+    block_id              = Column(String(255), nullable=True)
+
+    # Accessibility / vehicle attributes (GTFS: 0=unknown, 1=yes, 2=no)
+    wheelchair_accessible = Column(SmallInteger, nullable=True)
+    bikes_allowed         = Column(SmallInteger, nullable=True)
+    cars_allowed          = Column(SmallInteger, nullable=True)  # non-standard extension
+
+    # Hash columns for later use (pattern matching, geo deduplication)
+    geo_pattern_hash      = Column(String(64), nullable=True)
+    schedule_pattern_hash = Column(String(64), nullable=True)
+
+    version    = relationship("Version", back_populates="trips")
+    route      = relationship("Route",   back_populates="trips")
+    stop_times = relationship("StopTime", back_populates="trip", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "route_id"],
+            ["routes.version_id", "routes.route_id"],
+            name="fk_trips_route",
+            ondelete="CASCADE",
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# StopTimes  — GTFS stop_times.txt entities, one row per (trip, band entry).
+#
+# Composite PK: (version_id, trip_id, route_band_stop_id)
+# Note: stop_sequence is NOT stored; the ordered position is derived from
+#       route_band_stops.sort_order at export time.
+# Referential integrity:
+#   - Deleting a version/trip → cascades to stop_times
+#   - Deleting a route_band_stop → cascades to stop_times (FK on route_band_stop_id)
+#     After deletion, the route_band_stop delete handler MUST decrement sort_order
+#     for subsequent entries in the same band (application-level logic).
+# ---------------------------------------------------------------------------
+
+class StopTime(Base):
+    __tablename__ = "stop_times"
+
+    version_id         = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    trip_id            = Column(String(255), primary_key=True)
+    route_band_stop_id = Column(UUID(as_uuid=True), ForeignKey("route_band_stops.id", ondelete="CASCADE"), primary_key=True)
+
+    # Times in GTFS "H+:MM:SS" format (may exceed 24h for overnight service)
+    arrival_time   = Column(String(8), nullable=True)   # NULL → same as departure
+    departure_time = Column(String(8), nullable=True)   # NULL → not yet entered
+
+    stop_headsign_id      = Column(String(255), nullable=True)  # placeholder; FK added later
+    pickup_type           = Column(SmallInteger, nullable=True)
+    drop_off_type         = Column(SmallInteger, nullable=True)
+    continuous_pickup     = Column(SmallInteger, nullable=True)
+    continuous_drop_off   = Column(SmallInteger, nullable=True)
+    shape_dist_traveled   = Column(Float, nullable=True)
+    timepoint             = Column(SmallInteger, nullable=True)
+
+    trip            = relationship("Trip",         back_populates="stop_times")
+    route_band_stop = relationship("RouteBandStop")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "trip_id"],
+            ["trips.version_id", "trips.trip_id"],
+            name="fk_stop_times_trip",
+            ondelete="CASCADE",
         ),
     )

@@ -19,9 +19,12 @@ const { t } = useI18n()
  *   route-select  — user clicked a route item (emits route object)
  */
 const props = defineProps({
-  canWrite:  { type: Boolean, default: false },
-  canRead:   { type: Boolean, default: false },
-  sectionId: { type: String, default: 'routes' },
+  canWrite:   { type: Boolean, default: false },
+  canRead:    { type: Boolean, default: false },
+  sectionId:  { type: String,  default: 'routes' },
+  showTitle:  { type: Boolean, default: true },
+  /** When provided, use these routes instead of the global routesStore. */
+  routes:     { type: Array,   default: null },
 })
 
 const emit = defineEmits(['add-route', 'route-select', 'reorder'])
@@ -42,16 +45,22 @@ function toggleCollapse() {
   localStorage.setItem(_storageKey(props.sectionId), String(collapsed.value))
 }
 
-// ---- Routes — local ordered list (driven by store, reordered by drag-and-drop) ----
+// ---- Routes — local ordered list ----
+// When the `routes` prop is provided, use it directly (read-only, no reorder).
+// Otherwise, drive from the global routesStore with drag-and-drop reorder support.
 const orderedRoutes = ref([])
 
-watch(() => routesStore.state.routes, (routes) => {
-  orderedRoutes.value = [...routes].sort((a, b) => {
+function _sortRoutes(routes) {
+  return [...routes].sort((a, b) => {
     const aOrder = a.route_sort_order ?? Infinity
     const bOrder = b.route_sort_order ?? Infinity
     if (aOrder !== bOrder) return aOrder - bOrder
     return (a.route_id ?? '').localeCompare(b.route_id ?? '')
   })
+}
+
+watch(() => props.routes ?? routesStore.state.routes, (routes) => {
+  orderedRoutes.value = _sortRoutes(routes ?? [])
 }, { immediate: true })
 
 // ---- Drag-and-drop ----
@@ -79,6 +88,8 @@ function onDrop(event, index) {
   const src = dragSrcIndex.value
   onDragEnd()
   if (src === null || src === index) return
+  // Reorder only supported when driven by the store (no routes prop)
+  if (props.routes !== null) return
   const items = [...orderedRoutes.value]
   const [moved] = items.splice(src, 1)
   items.splice(index, 0, moved)
@@ -125,8 +136,8 @@ function selectRoute(route) {
       </button>
     </div>
 
-    <!-- Section title (only when readable, hidden when collapsed) -->
-    <div v-if="canRead" class="routes-sidebar__section-title" aria-hidden="true">{{ t('routes.sidebar_label') }}</div>
+    <!-- Section title (only when readable and showTitle is true, hidden when collapsed) -->
+    <div v-if="canRead && showTitle" class="routes-sidebar__section-title" aria-hidden="true">{{ t('routes.sidebar_label') }}</div>
 
     <!-- "Linie hinzufügen" button -->
     <div v-if="canWrite" class="routes-sidebar__add">
@@ -150,7 +161,7 @@ function selectRoute(route) {
           { 'route-item--active': isSelected(route) },
           { 'route-item--drag-over': dragOverIndex === index && dragSrcIndex !== index },
         ]"
-        :draggable="canWrite && !collapsed ? 'true' : 'false'"
+        :draggable="canWrite && !collapsed && routes === null ? 'true' : 'false'"
         :title="collapsed ? routeLabel(route) : undefined"
         role="button"
         tabindex="0"

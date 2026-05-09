@@ -103,8 +103,9 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
         key="schedule",
         lang_key="permissions._groups.schedule",
         permissions=[
-            PermissionDef("schedule:read",  "permissions.schedule.read"),
-            PermissionDef("schedule:write", "permissions.schedule.write"),
+            PermissionDef("schedule:read",   "permissions.schedule.read"),
+            PermissionDef("schedule:write",  "permissions.schedule.write"),
+            PermissionDef("schedule:delete", "permissions.schedule.delete"),
         ],
     ),
     PermissionGroup(
@@ -184,8 +185,9 @@ class Permission(str, Enum):
     NETWORK_WRITE = "network:write"
 
     # Schedule (GTFS)
-    SCHEDULE_READ  = "schedule:read"
-    SCHEDULE_WRITE = "schedule:write"
+    SCHEDULE_READ   = "schedule:read"
+    SCHEDULE_WRITE  = "schedule:write"
+    SCHEDULE_DELETE = "schedule:delete"
 
     # Agency (GTFS)
     AGENCY_READ   = "agency:read"

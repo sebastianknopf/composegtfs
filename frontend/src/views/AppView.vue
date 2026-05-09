@@ -53,7 +53,8 @@ const sections = [
     id: 'schedule',
     labelKey: 'sections.schedule',
     icon: 'calendar_month',
-    defaultView: null,
+    defaultView: 'schedule',
+    permission: 'schedule:read',
     views: [],
   },
 ]

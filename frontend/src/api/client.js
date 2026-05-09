@@ -167,6 +167,30 @@ export const api = {
     agenciesLookup:  (versionId)             => request('GET',    `/versions/${versionId}/routes/agencies`),
   },
 
+  schedule: {
+    routes:    (versionId) => request('GET', `/versions/${versionId}/schedule/routes`),
+    platforms: (versionId) => request('GET', `/versions/${versionId}/schedule/platforms`),
+    dayTypes:  (versionId) => request('GET', `/versions/${versionId}/schedule/day-types`),
+    band: {
+      get:    (versionId, routeId, direction)                => request('GET',    `/versions/${versionId}/schedule/${routeId}/band/${direction}`),
+      add:    (versionId, routeId, direction, data)          => request('POST',   `/versions/${versionId}/schedule/${routeId}/band/${direction}`, data),
+      reorder:(versionId, routeId, direction, entryId, data) => request('PUT',    `/versions/${versionId}/schedule/${routeId}/band/${direction}/${entryId}`, data),
+      remove: (versionId, routeId, direction, entryId)       => request('DELETE', `/versions/${versionId}/schedule/${routeId}/band/${direction}/${entryId}`),
+    },
+    trips: {
+      list:   (versionId, routeId, direction)        => request('GET',    `/versions/${versionId}/schedule/${routeId}/trips?direction=${direction}`),
+      get:    (versionId, routeId, tripId)            => request('GET',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}`),
+      create: (versionId, routeId, data)             => request('POST',   `/versions/${versionId}/schedule/${routeId}/trips`, data),
+      update: (versionId, routeId, tripId, data)     => request('PUT',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}`, data),
+      delete: (versionId, routeId, tripId)           => request('DELETE', `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}`),
+    },
+    stopTimes: {
+      list:   (versionId, routeId, tripId)                        => request('GET',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times`),
+      upsert: (versionId, routeId, tripId, routeBandStopId, data) => request('PUT',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`, data),
+      delete: (versionId, routeId, tripId, routeBandStopId)       => request('DELETE', `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`),
+    },
+  },
+
   stops: {
     list:               (versionId)                              => request('GET',    `/versions/${versionId}/stops`),
     listAllPlatforms:   (versionId)                              => request('GET',    `/versions/${versionId}/stops/all-platforms`),

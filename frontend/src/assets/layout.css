@@ -90,7 +90,7 @@ html, body {
   gap: var(--size-4, 1rem);
 }
 
-.login-card__fields md-filled-text-field {
+.login-card__fields md-outlined-text-field {
   width: 100%;
 }
 
