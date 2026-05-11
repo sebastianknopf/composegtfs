@@ -5,12 +5,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_session
-from app.models import Calendar, Route, RouteBandStop, Stop, StopTime, Trip, User, Version
+from app.models import Calendar, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
 from app.permissions import Permission, require
 
 router = APIRouter(prefix="/api/versions/{version_id}/schedule", tags=["schedule"])
@@ -46,6 +46,16 @@ async def _get_stop_or_404(version_id: uuid.UUID, stop_id: str, session: AsyncSe
     if stop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stop not found")
     return stop
+
+
+async def _get_shape_or_404(version_id: uuid.UUID, shape_id: str, session: AsyncSession) -> Shape:
+    result = await session.execute(
+        select(Shape).where(Shape.version_id == version_id, Shape.shape_id == shape_id)
+    )
+    shape = result.scalar_one_or_none()
+    if shape is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shape not found")
+    return shape
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +237,8 @@ class SchedulePlatformOut(BaseModel):
     stop_id:       str
     stop_name:     str | None
     platform_code: str | None
+    stop_lat:      float | None
+    stop_lon:      float | None
 
     model_config = {"from_attributes": True}
 
@@ -538,6 +550,213 @@ async def remove_route_band_stop(
 
 
 # ===========================================================================
+# Shapes
+# ===========================================================================
+
+class ShapeOut(BaseModel):
+    version_id:     uuid.UUID
+    shape_id:       str
+    shape_name:     str | None
+    shape_polyline: str
+
+    model_config = {"from_attributes": True}
+
+
+class ShapeCreate(BaseModel):
+    shape_id:       str
+    shape_name:     str | None = None
+    shape_polyline: str
+    apply_to_pattern: bool = False
+    pattern_hash:   str | None = None
+
+    @field_validator("shape_id")
+    @classmethod
+    def validate_shape_id(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("shape_id must not be empty")
+        return v
+
+    @field_validator("shape_polyline")
+    @classmethod
+    def validate_shape_polyline(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("shape_polyline must not be empty")
+        return v
+
+
+class ShapeUpdate(BaseModel):
+    shape_name:     str | None = None
+    shape_polyline: str
+    apply_to_pattern: bool = False
+    pattern_hash:   str | None = None
+
+    @field_validator("shape_polyline")
+    @classmethod
+    def validate_shape_polyline(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("shape_polyline must not be empty")
+        return v
+
+
+@router.get(
+    "/shapes",
+    response_model=list[ShapeOut],
+    summary="Search shapes for route-path flyouts",
+    dependencies=[require(Permission.SCHEDULE_READ)],
+)
+async def search_shapes(
+    version_id: uuid.UUID,
+    q: str | None = Query(default=None, description="Search by shape_id or shape_name"),
+    limit: int = Query(default=50, ge=1, le=500),
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[Shape]:
+    await _get_version_or_404(version_id, session)
+
+    stmt = select(Shape).where(Shape.version_id == version_id)
+    query = (q or "").strip()
+    if query:
+        like = f"%{query}%"
+        stmt = stmt.where(
+            or_(
+                Shape.shape_id.ilike(like),
+                Shape.shape_name.ilike(like),
+            )
+        )
+
+    stmt = stmt.order_by(Shape.shape_name.nulls_last(), Shape.shape_id).limit(limit)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+@router.post(
+    "/shapes",
+    response_model=ShapeOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a shape",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def create_shape(
+    version_id: uuid.UUID,
+    body: ShapeCreate,
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Shape:
+    await _get_version_or_404(version_id, session)
+
+    existing = await session.execute(
+        select(Shape).where(Shape.version_id == version_id, Shape.shape_id == body.shape_id)
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A shape with this shape_id already exists in this version",
+        )
+
+    shape = Shape(
+        version_id=version_id,
+        shape_id=body.shape_id,
+        shape_name=(body.shape_name.strip() if body.shape_name is not None else None),
+        shape_polyline=body.shape_polyline,
+    )
+    session.add(shape)
+    await session.commit()
+    await session.refresh(shape)
+
+    # Apply shape to all trips with matching pattern if requested
+    if body.apply_to_pattern and body.pattern_hash:
+        await session.execute(
+            update(Trip).where(
+                Trip.version_id == version_id,
+                Trip.geo_pattern_hash == body.pattern_hash,
+                Trip.shape_id.is_(None),
+            ).values(shape_id=body.shape_id)
+        )
+        await session.commit()
+
+    return shape
+
+
+@router.get(
+    "/shapes/{shape_id}",
+    response_model=ShapeOut,
+    summary="Get a shape by ID",
+    dependencies=[require(Permission.SCHEDULE_READ)],
+)
+async def get_shape(
+    version_id: uuid.UUID,
+    shape_id: str,
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Shape:
+    await _get_version_or_404(version_id, session)
+    return await _get_shape_or_404(version_id, shape_id, session)
+
+
+@router.put(
+    "/shapes/{shape_id}",
+    response_model=ShapeOut,
+    summary="Update a shape",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def update_shape(
+    version_id: uuid.UUID,
+    shape_id: str,
+    body: ShapeUpdate,
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Shape:
+    await _get_version_or_404(version_id, session)
+    shape = await _get_shape_or_404(version_id, shape_id, session)
+
+    shape.shape_name = body.shape_name.strip() if body.shape_name is not None else None
+    shape.shape_polyline = body.shape_polyline
+    await session.commit()
+    await session.refresh(shape)
+
+    # Apply shape to all trips with matching pattern if requested
+    if body.apply_to_pattern and body.pattern_hash:
+        await session.execute(
+            update(Trip).where(
+                Trip.version_id == version_id,
+                Trip.geo_pattern_hash == body.pattern_hash,
+                Trip.shape_id.is_(None),
+            ).values(shape_id=shape_id)
+        )
+        await session.commit()
+
+    return shape
+
+
+@router.delete(
+    "/shapes/{shape_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a shape and detach it from trips",
+    dependencies=[require(Permission.SCHEDULE_DELETE)],
+)
+async def delete_shape(
+    version_id: uuid.UUID,
+    shape_id: str,
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    await _get_version_or_404(version_id, session)
+    shape = await _get_shape_or_404(version_id, shape_id, session)
+
+    await session.execute(
+        update(Trip)
+        .where(Trip.version_id == version_id, Trip.shape_id == shape_id)
+        .values(shape_id=None)
+        .execution_options(synchronize_session="fetch")
+    )
+    await session.delete(shape)
+    await session.commit()
+
+
+# ===========================================================================
 # Trips
 # ===========================================================================
 
@@ -571,6 +790,7 @@ class TripOut(BaseModel):
     trip_short_name:       str | None
     trip_headsign_id:      str | None
     block_id:              str | None
+    shape_id:              str | None
     wheelchair_accessible: int | None
     bikes_allowed:         int | None
     cars_allowed:          int | None
@@ -587,6 +807,7 @@ class TripCreate(BaseModel):
     trip_short_name:       str | None = None
     trip_headsign_id:      str | None = None
     block_id:              str | None = None
+    shape_id:              str | None = None
     wheelchair_accessible: int | None = None
     bikes_allowed:         int | None = None
     cars_allowed:          int | None = None
@@ -605,6 +826,7 @@ class TripUpdate(BaseModel):
     trip_short_name:       str | None = None
     trip_headsign_id:      str | None = None
     block_id:              str | None = None
+    shape_id:              str | None = None
     wheelchair_accessible: int | None = None
     bikes_allowed:         int | None = None
     cars_allowed:          int | None = None
@@ -684,6 +906,13 @@ async def create_trip(
     await _get_version_or_404(version_id, session)
     await _get_route_or_404(version_id, route_id, session)
 
+    shape_id = (body.shape_id or "").strip() or None
+    if body.shape_id is not None and shape_id is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="shape_id must not be empty")
+    if shape_id is not None:
+        await _get_shape_or_404(version_id, shape_id, session)
+
     trip_id = (body.trip_id or str(uuid.uuid4())).strip()
     if not trip_id:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -706,6 +935,7 @@ async def create_trip(
         trip_short_name=body.trip_short_name,
         trip_headsign_id=body.trip_headsign_id,
         block_id=body.block_id,
+        shape_id=shape_id,
         wheelchair_accessible=body.wheelchair_accessible,
         bikes_allowed=body.bikes_allowed,
         cars_allowed=body.cars_allowed,
@@ -735,7 +965,18 @@ async def update_trip(
     await _get_version_or_404(version_id, session)
     trip = await _get_trip_or_404(version_id, route_id, trip_id, session)
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+    if "shape_id" in updates:
+        raw_shape_id = updates["shape_id"]
+        normalized_shape_id = (raw_shape_id or "").strip() or None
+        if raw_shape_id is not None and normalized_shape_id is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="shape_id must not be empty")
+        if normalized_shape_id is not None:
+            await _get_shape_or_404(version_id, normalized_shape_id, session)
+        updates["shape_id"] = normalized_shape_id
+
+    for field, value in updates.items():
         setattr(trip, field, value)
 
     await session.flush()

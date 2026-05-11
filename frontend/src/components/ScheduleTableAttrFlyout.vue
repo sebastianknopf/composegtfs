@@ -12,6 +12,8 @@
  *   modelValue  — { wheelchair_accessible: null|true|false, bikes_allowed: null|true|false, cars_allowed: null|true|false }
  *   open        — boolean — controls flyout visibility
  *   isGhost     — boolean — ghost (dummy) styling
+ *   readonly    — boolean — show value only, no dropdown allowed
+ *   disabled    — boolean — disable all interactions
  *
  * Emits:
  *   update:modelValue  — emitted on every checkbox toggle (passes updated object)
@@ -27,8 +29,10 @@ const props = defineProps({
     type:    Object,
     default: () => ({ wheelchair_accessible: null, bikes_allowed: null, cars_allowed: null }),
   },
-  open:    { type: Boolean, default: false },
-  isGhost: { type: Boolean, default: false },
+  open:      { type: Boolean, default: false },
+  isGhost:   { type: Boolean, default: false },
+  readonly:  { type: Boolean, default: false },
+  disabled:  { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'open', 'close'])
@@ -53,12 +57,14 @@ const hasAny = computed(() => visibleAttrs.value.length > 0)
  * - Clicking the other checkbox → sets the new value
  */
 function toggle(key, value) {
+  if (props.disabled || props.readonly) return
   const current = props.modelValue?.[key] ?? null
   const next = current === value ? null : value
   emit('update:modelValue', { ...props.modelValue, [key]: next })
 }
 
 function onTriggerActivate() {
+  if (props.disabled || props.readonly) return
   emit('open')
 }
 
@@ -74,8 +80,8 @@ function onFocusOut(e) {
     <!-- Trigger: shows icons for set attributes -->
     <div
       class="saf-trigger"
-      :class="{ 'saf-trigger--empty': !hasAny, 'saf-trigger--ghost': isGhost }"
-      tabindex="0"
+      :class="{ 'saf-trigger--empty': !hasAny, 'saf-trigger--ghost': isGhost, 'saf-trigger--disabled': disabled || readonly }"
+      :tabindex="disabled || readonly ? -1 : 0"
       @click="onTriggerActivate"
       @keydown.space.prevent="onTriggerActivate"
       @keydown.enter.prevent="onTriggerActivate"
@@ -95,7 +101,7 @@ function onFocusOut(e) {
     </div>
 
     <!-- Flyout: Ja / Nein checkboxes per attribute -->
-    <div v-if="open" class="saf-flyout">
+    <div v-if="open && !disabled && !readonly" class="saf-flyout">
       <div
         v-for="attr in ATTRS"
         :key="attr.key"
@@ -146,6 +152,15 @@ function onFocusOut(e) {
 
 .saf-trigger:focus {
   box-shadow: 0 0 0 2px var(--md-sys-color-primary, #1f69e0);
+}
+
+.saf-trigger--disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.saf-trigger--disabled:focus {
+  box-shadow: none;
 }
 
 /* Icon wrapper in trigger — enables strikethrough overlay */

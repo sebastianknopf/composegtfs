@@ -98,6 +98,7 @@ class Version(Base):
     stops = relationship("Stop", back_populates="version", cascade="all, delete-orphan")
     routes = relationship("Route", back_populates="version", cascade="all, delete-orphan")
     route_band_stops = relationship("RouteBandStop", back_populates="version", cascade="all, delete-orphan")
+    shapes = relationship("Shape", back_populates="version", cascade="all, delete-orphan")
     trips = relationship("Trip", back_populates="version", cascade="all, delete-orphan")
 
 
@@ -355,6 +356,23 @@ class RouteBandStop(Base):
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Shapes  — route paths (GTFS-like), scoped to a Version.
+# ---------------------------------------------------------------------------
+
+class Shape(Base):
+    __tablename__ = "shapes"
+
+    version_id     = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    shape_id       = Column(String(255), primary_key=True)
+    shape_name     = Column(String(255), nullable=True)
+    shape_polyline = Column(Text, nullable=False)
+
+    version = relationship("Version", back_populates="shapes")
+
+
+
 # ---------------------------------------------------------------------------
 # Trips  — GTFS trips.txt entities, scoped to a Version and Route.
 #
@@ -362,6 +380,7 @@ class RouteBandStop(Base):
 # Referential integrity:
 #   - Deleting a version   → cascades to trips (via version_id FK)
 #   - Deleting a route     → cascades to trips (via composite FK on version/route)
+#   - Deleting a shape     → sets shape_id to NULL (via composite FK with SET NULL)
 #   - Deleting a calendar  → sets service_id to NULL (app-level only; composite FKs
 #                            with SET NULL would also NULL version_id, so we skip the
 #                            DB-level FK on service_id and rely on app logic)
@@ -379,6 +398,7 @@ class Trip(Base):
     trip_short_name       = Column(String(255), nullable=True)
     trip_headsign_id      = Column(String(255), nullable=True)   # placeholder; FK added later
     block_id              = Column(String(255), nullable=True)
+    shape_id              = Column(String(255), nullable=True)
 
     # Accessibility / vehicle attributes (GTFS: 0=unknown, 1=yes, 2=no)
     wheelchair_accessible = Column(SmallInteger, nullable=True)
@@ -399,6 +419,12 @@ class Trip(Base):
             ["routes.version_id", "routes.route_id"],
             name="fk_trips_route",
             ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["version_id", "shape_id"],
+            ["shapes.version_id", "shapes.shape_id"],
+            name="fk_trips_shape",
+            ondelete="SET NULL",
         ),
     )
 

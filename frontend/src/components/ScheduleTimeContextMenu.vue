@@ -11,6 +11,7 @@
  *   modelValue    — { arrival_time: string|null, pickup_type: null|0|1|2|3, drop_off_type: null|0|1|2|3 }
  *   departureTime — string — the departure time of this cell (used to validate arrival)
  *   open          — boolean
+ *   disabled      — boolean — readonly mode, menu shown but no edits allowed
  *
  * Emits:
  *   update:modelValue
@@ -27,6 +28,7 @@ const props = defineProps({
   },
   departureTime: { type: String, default: '' },
   open:          { type: Boolean, default: false },
+  disabled:      { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'close'])
@@ -119,6 +121,7 @@ function toggleDropOff(value) {
 }
 
 function onFocusOut(e) {
+  // Only close if focus leaves the entire wrapper
   if (!e.currentTarget.contains(e.relatedTarget)) {
     emit('close')
   }
@@ -142,6 +145,7 @@ function onFocusOut(e) {
           class="stcm__arrival-input"
           :class="{ 'stcm__arrival-input--error': arrivalError }"
           v-model="arrivalInput"
+          :disabled="disabled"
           type="text"
           inputmode="numeric"
           autocomplete="off"
@@ -153,6 +157,7 @@ function onFocusOut(e) {
         />
         <button
           class="stcm__arrival-clear"
+          :disabled="disabled"
           :title="t('common.delete')"
           @mousedown.prevent
           @click="clearArrivalToDeparture"
@@ -179,12 +184,14 @@ function onFocusOut(e) {
           v-for="opt in PICKUP_OPTIONS"
           :key="'pu-' + opt.value"
           class="stcm__option"
+          :class="{ 'stcm__option--disabled': disabled }"
         >
           <input
             type="checkbox"
             class="stcm__checkbox"
+            :disabled="disabled"
             :checked="(modelValue?.pickup_type ?? null) === opt.value"
-            @change="togglePickup(opt.value)"
+            @change="!disabled && togglePickup(opt.value)"
           />
           <span class="stcm__option-label">{{ t(opt.labelKey) }}</span>
         </label>
@@ -204,12 +211,14 @@ function onFocusOut(e) {
           v-for="opt in DROPOFF_OPTIONS"
           :key="'do-' + opt.value"
           class="stcm__option"
+          :class="{ 'stcm__option--disabled': disabled }"
         >
           <input
             type="checkbox"
             class="stcm__checkbox"
+            :disabled="disabled"
             :checked="(modelValue?.drop_off_type ?? null) === opt.value"
-            @change="toggleDropOff(opt.value)"
+            @change="!disabled && toggleDropOff(opt.value)"
           />
           <span class="stcm__option-label">{{ t(opt.labelKey) }}</span>
         </label>
@@ -282,6 +291,12 @@ function onFocusOut(e) {
   cursor: text;
 }
 
+.stcm__arrival-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  background: var(--md-sys-color-surface-dim, #f5f5f5);
+}
+
 .stcm__arrival-clear {
   display: inline-flex;
   align-items: center;
@@ -294,12 +309,16 @@ function onFocusOut(e) {
   cursor: pointer;
   color: var(--md-sys-color-error, #b00020);
   opacity: 0.7;
-  transition: opacity 0.15s, background 0.15s;
+  transition: opacity 0.15s;
 }
 
-.stcm__arrival-clear:hover {
+.stcm__arrival-clear:hover:not(:disabled) {
   opacity: 1;
-  background: color-mix(in srgb, var(--md-sys-color-error, #b00020) 12%, transparent);
+}
+
+.stcm__arrival-clear:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .stcm__arrival-clear md-icon {
@@ -349,7 +368,12 @@ function onFocusOut(e) {
   user-select: none;
 }
 
-.stcm__option:hover {
+.stcm__option--disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.stcm__option:not(.stcm__option--disabled):hover {
   background: color-mix(in srgb, var(--md-sys-color-primary, #1f69e0) 8%, transparent);
 }
 

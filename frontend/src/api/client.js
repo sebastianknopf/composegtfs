@@ -189,6 +189,16 @@ export const api = {
       upsert: (versionId, routeId, tripId, routeBandStopId, data) => request('PUT',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`, data),
       delete: (versionId, routeId, tripId, routeBandStopId)       => request('DELETE', `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`),
     },
+    shapes: {
+      search: (versionId, query = '', limit = 50) => request(
+        'GET',
+        `/versions/${versionId}/schedule/shapes?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
+      ),
+      get:    (versionId, shapeId)       => request('GET',    `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
+      create: (versionId, data)          => request('POST',   `/versions/${versionId}/schedule/shapes`, data),
+      update: (versionId, shapeId, data) => request('PUT',    `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`, data),
+      delete: (versionId, shapeId)       => request('DELETE', `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
+    },
   },
 
   stops: {

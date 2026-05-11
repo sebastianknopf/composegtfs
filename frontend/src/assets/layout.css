@@ -6,7 +6,7 @@
 /* White container background via MD3 token */
 md-dialog {
   --md-dialog-container-color: #ffffff;
-  width: min(800px, 96vw);
+  width: min(920px, 96vw);
   max-width: 96vw;
 }
 
