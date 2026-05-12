@@ -183,6 +183,9 @@ export const api = {
       create: (versionId, routeId, data)             => request('POST',   `/versions/${versionId}/schedule/${routeId}/trips`, data),
       update: (versionId, routeId, tripId, data)     => request('PUT',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}`, data),
       delete: (versionId, routeId, tripId)           => request('DELETE', `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}`),
+      batchDelete: (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-delete`, { trip_ids: tripIds }),
+      batchShift:  (versionId, routeId, tripIds, offsetMinutes, direction) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-shift`, { trip_ids: tripIds, offset_minutes: offsetMinutes, direction }),
+      batchCopy:   (versionId, routeId, body) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-copy`, body),
     },
     stopTimes: {
       list:   (versionId, routeId, tripId)                        => request('GET',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times`),

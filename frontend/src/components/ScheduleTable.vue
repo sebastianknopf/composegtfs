@@ -26,13 +26,14 @@ import '@material/web/icon/icon.js'
 import '@material/web/progress/circular-progress.js'
 
 const props = defineProps({
-  versionId:  { type: String,  default: null },
-  routeId:    { type: String,  default: null },
-  direction:  { type: Number,  default: 0 },
-  platforms:  { type: Array,   default: () => [] },
-  canRead:    { type: Boolean, default: false },
-  canWrite:   { type: Boolean, default: false },
-  canDelete:  { type: Boolean, default: false },
+  versionId:         { type: String,  default: null },
+  routeId:           { type: String,  default: null },
+  direction:         { type: Number,  default: 0 },
+  platforms:         { type: Array,   default: () => [] },
+  canRead:           { type: Boolean, default: false },
+  canWrite:          { type: Boolean, default: false },
+  canDelete:         { type: Boolean, default: false },
+  filterServiceIds:  { type: Array,   default: () => [] },
 })
 
 const { t } = useI18n()
@@ -1006,6 +1007,32 @@ function selectBySchedulePattern(trip) {
   closeTripCtx()
 }
 
+// ---- Selection dropdown menu functions ----
+function selectAllTrips() {
+  for (const trip of visibleTrips.value) {
+    trip.selected = true
+  }
+}
+
+function selectTripsWithSamePath() {
+  const selectedTrips = visibleTrips.value.filter(t => t.selected)
+  if (selectedTrips.length !== 1) return
+  const active = selectedTrips[0]
+  if (!active?.schedule_pattern_hash) return
+  const hash = active.schedule_pattern_hash
+  for (const t of visibleTrips.value) {
+    if (t.schedule_pattern_hash === hash) {
+      t.selected = true
+    }
+  }
+}
+
+function deselectAllTrips() {
+  for (const trip of trips.value) {
+    trip.selected = false
+  }
+}
+
 function updateStopTime(trip, entryId, val) {
   trip.stopTimes[entryId] = { ...getStopTime(trip, entryId), ...val }
   if (trip.saved) {
@@ -1051,6 +1078,28 @@ function isTripValid(trip) {
   const timeCount  = Object.values(trip.times).filter(v => (v ?? '').trim() !== '').length
   return hasDayType && timeCount >= 2
 }
+
+// ---- Expose public methods for parent components ----
+// Trips visible after applying the day-type filter (empty filterServiceIds = show all)
+const visibleTrips = computed(() => {
+  if (!props.filterServiceIds.length) return trips.value
+  return trips.value.filter(t => props.filterServiceIds.includes(t.day_type))
+})
+
+// All unique service_ids present in the currently loaded trips
+const availableServiceIds = computed(() => [
+  ...new Set(trips.value.map(t => t.day_type).filter(Boolean)),
+])
+
+defineExpose({
+  trips,
+  visibleTrips,
+  availableServiceIds,
+  loadTrips,
+  selectAllTrips,
+  selectTripsWithSamePath,
+  deselectAllTrips,
+})
 </script>
 
 <template>
@@ -1074,7 +1123,7 @@ function isTripValid(trip) {
             <tr class="schedule-table__header-row">
               <th colspan="2" class="schedule-table__th schedule-table__th--row-label" />
               <th
-                v-for="trip in trips"
+                v-for="trip in visibleTrips"
                 :key="trip.id + '-a'"
                 class="schedule-table__th schedule-table__trip-th"
                 :class="{ 'schedule-table__trip-th--selected': trip.selected }"
@@ -1091,14 +1140,6 @@ function isTripValid(trip) {
                     class="schedule-table__trip-warning-route"
                     :title="trip.route_path ? t('schedule.trip_route_path_mismatch_warning') : t('schedule.trip_missing_route_path_warning')"
                   >warning</md-icon>
-                  <button
-                    v-if="props.canWrite"
-                    class="schedule-table__trip-action-btn"
-                    :title="t('schedule.copy_trip')"
-                    @click.stop
-                  >
-                    <md-icon>content_copy</md-icon>
-                  </button>
                   <label class="schedule-table__trip-select-label" :title="t('schedule.select_trip')" @click.stop>
                     <input
                       type="checkbox"
@@ -1108,14 +1149,6 @@ function isTripValid(trip) {
                       @change="trip.selected = $event.target.checked"
                     />
                   </label>
-                  <button
-                    v-if="props.canDelete"
-                    class="schedule-table__trip-action-btn schedule-table__trip-delete"
-                    :title="t('common.delete')"
-                    @click.stop="deleteTrip(trip)"
-                  >
-                    <md-icon>close</md-icon>
-                  </button>
                 </div>
               </th>
               <template v-if="bandEntries.length > 0">
@@ -1128,7 +1161,7 @@ function isTripValid(trip) {
             <tr class="schedule-table__header-row">
               <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_short_name') }}</th>
               <td
-                v-for="trip in trips"
+                v-for="trip in visibleTrips"
                 :key="trip.id + '-n'"
                 class="schedule-table__trip-input-cell"
               >
@@ -1158,7 +1191,7 @@ function isTripValid(trip) {
             <tr class="schedule-table__header-row">
               <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_day_type') }}</th>
               <td
-                v-for="trip in trips"
+                v-for="trip in visibleTrips"
                 :key="trip.id + '-d'"
                 class="schedule-table__trip-input-cell schedule-table__trip-input-cell--dt"
               >
@@ -1207,7 +1240,7 @@ function isTripValid(trip) {
             <tr class="schedule-table__header-row">
               <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_route_path') }}</th>
               <td
-                v-for="trip in trips"
+                v-for="trip in visibleTrips"
                 :key="trip.id + '-r'"
                 class="schedule-table__trip-input-cell schedule-table__trip-input-cell--dt"
               >
@@ -1276,7 +1309,7 @@ function isTripValid(trip) {
             <tr class="schedule-table__header-row">
               <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_attributes') }}</th>
               <td
-                v-for="trip in trips"
+                v-for="trip in visibleTrips"
                 :key="trip.id + '-at'"
                 class="schedule-table__trip-input-cell schedule-table__trip-input-cell--dt"
               >
@@ -1313,7 +1346,7 @@ function isTripValid(trip) {
               <th class="schedule-table__th schedule-table__th--platform" scope="col">
                 {{ t('schedule.column_platform') }}
               </th>
-              <td v-for="trip in trips" :key="trip.id + '-col'" class="schedule-table__trip-col-spacer" />
+              <td v-for="trip in visibleTrips" :key="trip.id + '-col'" class="schedule-table__trip-col-spacer" />
               <template v-if="bandEntries.length > 0">
                 <td class="schedule-table__trip-col-spacer schedule-table__trip-col-spacer--dummy" />
               </template>
@@ -1372,7 +1405,7 @@ function isTripValid(trip) {
               </td>
               <!-- Time cells per trip -->
               <td
-                v-for="trip in trips"
+                v-for="trip in visibleTrips"
                 :key="trip.id"
                 class="schedule-table__time-cell"
                 :class="{
@@ -1504,25 +1537,7 @@ function isTripValid(trip) {
         @close="closeContextMenu"
       />
 
-      <!-- Trip column context menu portal -->
-      <div
-        v-if="tripCtxTripId !== null"
-        class="st-trip-ctx"
-        tabindex="-1"
-        :style="{ position: 'absolute', top: tripCtxPos.top + 'px', left: tripCtxPos.left + 'px' }"
-        @mousedown.stop
-        @focusout="e => { if (!e.currentTarget.contains(e.relatedTarget)) closeTripCtx() }"
-        @keydown.escape="closeTripCtx"
-      >
-        <button
-          class="st-trip-ctx__item"
-          @mousedown.prevent
-          @click="selectBySchedulePattern(trips.find(t => t.id === tripCtxTripId))"
-        >
-          <md-icon class="st-trip-ctx__icon">select_all</md-icon>
-          {{ t('schedule.select_same_schedule') }}
-        </button>
-      </div>
+      <!-- Trip column context menu entfernt -->
     </template>
 
     <!-- Delete confirmation -->

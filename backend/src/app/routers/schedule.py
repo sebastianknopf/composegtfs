@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1002,6 +1002,350 @@ async def delete_trip(
     await _get_version_or_404(version_id, session)
     trip = await _get_trip_or_404(version_id, route_id, trip_id, session)
     await session.delete(trip)
+    await session.commit()
+
+
+class TripBatchDeleteRequest(BaseModel):
+    trip_ids: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Batch-Shift helper
+# ---------------------------------------------------------------------------
+
+def _seconds_to_gtfs_time(secs: int) -> str:
+    """Convert total seconds (>= 0) to GTFS HH:MM:SS format. Hours are zero-padded and may exceed 23."""
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    s = secs % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+class TripBatchShiftRequest(BaseModel):
+    trip_ids:       list[str]
+    offset_minutes: int   # 1..1439
+    direction:      str   # "forward" | "backward"
+
+    @field_validator("offset_minutes")
+    @classmethod
+    def validate_offset(cls, v: int) -> int:
+        if v < 1 or v > 1439:
+            raise ValueError("offset_minutes must be between 1 and 1439")
+        return v
+
+    @field_validator("direction")
+    @classmethod
+    def validate_direction(cls, v: str) -> str:
+        if v not in ("forward", "backward"):
+            raise ValueError("direction must be 'forward' or 'backward'")
+        return v
+
+
+@router.post(
+    "/{route_id}/trips/batch-shift",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Shift departure/arrival times of multiple trips by a fixed offset",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def batch_shift_trips(
+    version_id: uuid.UUID,
+    route_id:   str,
+    req:        TripBatchShiftRequest = Body(...),
+    _:          User                  = Depends(get_current_user),
+    session:    AsyncSession          = Depends(get_session),
+) -> None:
+    await _get_version_or_404(version_id, session)
+    offset_secs = req.offset_minutes * 60
+    if req.direction == "backward":
+        offset_secs = -offset_secs
+
+    # Load all stop times for the affected trips in one query
+    result = await session.execute(
+        select(StopTime).where(
+            StopTime.version_id == version_id,
+            StopTime.trip_id.in_(req.trip_ids),
+        )
+    )
+    stop_times = result.scalars().all()
+
+    for st in stop_times:
+        for attr in ("arrival_time", "departure_time"):
+            old_val: str | None = getattr(st, attr)
+            if old_val is None:
+                continue
+            old_secs = _time_to_seconds(old_val)
+            if old_secs is None:
+                continue
+            new_secs = old_secs + offset_secs
+            if new_secs < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Shift would produce a negative time for trip '{st.trip_id}'. "
+                           "Reduce the offset or choose 'forward' direction.",
+                )
+            setattr(st, attr, _seconds_to_gtfs_time(new_secs))
+
+    await session.flush()
+    # Refresh hashes for all affected trips
+    for trip_id in req.trip_ids:
+        await _refresh_trip_hashes(version_id, trip_id, session)
+    await session.commit()
+
+
+@router.post(
+    "/{route_id}/trips/batch-delete",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete multiple trips (and all their stop times)",
+    dependencies=[require(Permission.SCHEDULE_DELETE)],
+)
+async def batch_delete_trips(
+    version_id: uuid.UUID,
+    route_id:   str,
+    req:        TripBatchDeleteRequest = Body(...),
+    _:          User                   = Depends(get_current_user),
+    session:    AsyncSession           = Depends(get_session),
+) -> None:
+    await _get_version_or_404(version_id, session)
+    result = await session.execute(
+        select(Trip).where(
+            Trip.version_id == version_id,
+            Trip.route_id   == route_id,
+            Trip.trip_id.in_(req.trip_ids),
+        )
+    )
+    for trip in result.scalars().all():
+        await session.delete(trip)
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Batch-Copy
+# ---------------------------------------------------------------------------
+
+class TripBatchCopyShift(BaseModel):
+    offset_minutes: int   # 1..1439
+    direction:      str   # "forward" | "backward"
+
+    @field_validator("offset_minutes")
+    @classmethod
+    def validate_offset(cls, v: int) -> int:
+        if v < 1 or v > 1439:
+            raise ValueError("offset_minutes must be between 1 and 1439")
+        return v
+
+    @field_validator("direction")
+    @classmethod
+    def validate_direction(cls, v: str) -> str:
+        if v not in ("forward", "backward"):
+            raise ValueError("direction must be 'forward' or 'backward'")
+        return v
+
+
+class TripBatchCopyHeadway(BaseModel):
+    start_time:      str   # GTFS H:MM or H:MM:SS
+    end_time:        str   # GTFS H:MM or H:MM:SS
+    headway_minutes: int   # 1..1439
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def validate_time(cls, v: str) -> str:
+        import re
+        if not re.fullmatch(r"\d+:\d{2}(:\d{2})?", v.strip()):
+            raise ValueError("Time must be in H:MM or H:MM:SS format")
+        return v.strip()
+
+    @field_validator("headway_minutes")
+    @classmethod
+    def validate_headway(cls, v: int) -> int:
+        if v < 1 or v > 1439:
+            raise ValueError("headway_minutes must be between 1 and 1439")
+        return v
+
+
+class TripBatchCopyRequest(BaseModel):
+    trip_ids:          list[str]
+    mode:              str                      # "shift" | "headway"
+    shift:             TripBatchCopyShift  | None = None
+    headway:           TripBatchCopyHeadway | None = None
+    short_name_start:  int | None = None        # optional running short name start
+    short_name_step:   int = 1                  # step between short names (default 1)
+    service_id:        str | None = None        # optional day-type override
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in ("shift", "headway"):
+            raise ValueError("mode must be 'shift' or 'headway'")
+        return v
+
+
+@router.post(
+    "/{route_id}/trips/batch-copy",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Copy multiple trips with optional time shift or headway generation",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def batch_copy_trips(
+    version_id: uuid.UUID,
+    route_id:   str,
+    req:        TripBatchCopyRequest = Body(...),
+    _:          User                 = Depends(get_current_user),
+    session:    AsyncSession         = Depends(get_session),
+) -> None:
+    await _get_version_or_404(version_id, session)
+
+    if req.mode == "shift":
+        if req.shift is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="shift parameters are required for mode='shift'")
+    else:  # headway
+        if req.headway is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="headway parameters are required for mode='headway'")
+
+    # Load source trips
+    trips_result = await session.execute(
+        select(Trip).where(
+            Trip.version_id == version_id,
+            Trip.route_id   == route_id,
+            Trip.trip_id.in_(req.trip_ids),
+        )
+    )
+    source_trips: list[Trip] = list(trips_result.scalars().all())
+    if not source_trips:
+        return
+
+    # Load all stop times for source trips in one query
+    st_result = await session.execute(
+        select(StopTime)
+        .where(
+            StopTime.version_id == version_id,
+            StopTime.trip_id.in_(req.trip_ids),
+        )
+        .join(StopTime.route_band_stop)
+        .order_by(RouteBandStop.sort_order)
+    )
+    stop_times_by_trip: dict[str, list[StopTime]] = {}
+    for st in st_result.scalars().all():
+        stop_times_by_trip.setdefault(st.trip_id, []).append(st)
+
+    new_trip_ids: list[str] = []
+    short_name_counter = 0  # running counter across all created trips
+
+    def _apply_offset(stop_times: list[StopTime], offset_secs: int) -> list[dict]:
+        """Return list of adjusted field dicts (arrival_time, departure_time)."""
+        rows = []
+        for st in stop_times:
+            arr = _time_to_seconds(st.arrival_time)
+            dep = _time_to_seconds(st.departure_time)
+            new_arr = (_seconds_to_gtfs_time(arr + offset_secs) if arr is not None else None)
+            new_dep = (_seconds_to_gtfs_time(dep + offset_secs) if dep is not None else None)
+            rows.append({
+                "route_band_stop_id":   st.route_band_stop_id,
+                "arrival_time":         new_arr,
+                "departure_time":       new_dep,
+                "stop_headsign_id":     st.stop_headsign_id,
+                "pickup_type":          st.pickup_type,
+                "drop_off_type":        st.drop_off_type,
+                "continuous_pickup":    st.continuous_pickup,
+                "continuous_drop_off":  st.continuous_drop_off,
+                "shape_dist_traveled":  st.shape_dist_traveled,
+                "timepoint":            st.timepoint,
+            })
+        return rows
+
+    def _create_trip_copy(source: Trip, offset_secs: int, service_id_override: str | None,
+                          short_name_override: str | None) -> Trip:
+        new_trip = Trip(
+            version_id=version_id,
+            trip_id=str(uuid.uuid4()),
+            route_id=route_id,
+            service_id=service_id_override if service_id_override is not None else source.service_id,
+            direction_id=source.direction_id,
+            trip_short_name=short_name_override,
+            trip_headsign_id=source.trip_headsign_id,
+            block_id=source.block_id,
+            shape_id=source.shape_id,
+            wheelchair_accessible=source.wheelchair_accessible,
+            bikes_allowed=source.bikes_allowed,
+            cars_allowed=source.cars_allowed,
+        )
+        return new_trip
+
+    for source_trip in source_trips:
+        src_stop_times = stop_times_by_trip.get(source_trip.trip_id, [])
+
+        # Determine offsets to apply
+        if req.mode == "shift":
+            s = req.shift  # type: ignore[union-attr]
+            offset = s.offset_minutes * 60
+            if s.direction == "backward":
+                offset = -offset
+            # Validate no negative times
+            for st in src_stop_times:
+                for attr in ("arrival_time", "departure_time"):
+                    val = _time_to_seconds(getattr(st, attr))
+                    if val is not None and val + offset < 0:
+                        raise HTTPException(
+                            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"Shift would produce a negative time for trip '{source_trip.trip_id}'.",
+                        )
+            offsets = [offset]
+        else:
+            # Headway mode: compute base time (first departure of the source trip)
+            h = req.headway  # type: ignore[union-attr]
+            start_secs = _time_to_seconds(h.start_time)
+            end_secs   = _time_to_seconds(h.end_time)
+            headway_secs = h.headway_minutes * 60
+
+            if start_secs is None or end_secs is None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    detail="Invalid start_time or end_time")
+            if end_secs <= start_secs:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    detail="end_time must be after start_time")
+
+            # Find base = first departure time
+            base_secs: int | None = None
+            for st in src_stop_times:
+                cand = _time_to_seconds(st.departure_time or st.arrival_time)
+                if cand is not None:
+                    base_secs = cand
+                    break
+
+            if base_secs is None:
+                continue  # no times on this trip → skip
+
+            offsets = []
+            slot = start_secs
+            while slot <= end_secs:
+                offsets.append(slot - base_secs)
+                slot += headway_secs
+
+        for offset_secs in offsets:
+            short_name: str | None = None
+            if req.short_name_start is not None:
+                short_name = str(req.short_name_start + short_name_counter * req.short_name_step)
+            short_name_counter += 1
+
+            new_trip = _create_trip_copy(source_trip, offset_secs, req.service_id, short_name)
+            session.add(new_trip)
+            await session.flush()
+
+            # Copy stop times
+            for row in _apply_offset(src_stop_times, offset_secs):
+                new_st = StopTime(
+                    version_id=version_id,
+                    trip_id=new_trip.trip_id,
+                    **row,
+                )
+                session.add(new_st)
+
+            new_trip_ids.append(new_trip.trip_id)
+
+    await session.flush()
+    for tid in new_trip_ids:
+        await _refresh_trip_hashes(version_id, tid, session)
     await session.commit()
 
 
