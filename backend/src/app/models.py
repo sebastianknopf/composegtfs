@@ -91,6 +91,7 @@ class Version(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(128), unique=True, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_now)
+    sort_order = Column(Integer, nullable=True)
 
     agencies = relationship("Agency", back_populates="version", cascade="all, delete-orphan")
     calendars = relationship("Calendar", back_populates="version", cascade="all, delete-orphan")
@@ -303,15 +304,6 @@ class Route(Base):
     version = relationship("Version", back_populates="routes")
     trips = relationship("Trip", back_populates="route", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["version_id", "agency_id"],
-            ["agencies.version_id", "agencies.agency_id"],
-            name="fk_routes_agency",
-            ondelete="SET NULL",
-        ),
-    )
-
 
 # ---------------------------------------------------------------------------
 # RouteBandStop  — defines the ordered sequence of stops (Steige) shown in the
@@ -364,10 +356,11 @@ class RouteBandStop(Base):
 class Shape(Base):
     __tablename__ = "shapes"
 
-    version_id     = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
-    shape_id       = Column(String(255), primary_key=True)
-    shape_name     = Column(String(255), nullable=True)
-    shape_polyline = Column(Text, nullable=False)
+    version_id       = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    shape_id         = Column(String(255), primary_key=True)
+    shape_name       = Column(String(255), nullable=True)
+    shape_polyline   = Column(Text, nullable=False)
+    routed_polyline  = Column(Text, nullable=True)
 
     version = relationship("Version", back_populates="shapes")
 
@@ -419,12 +412,6 @@ class Trip(Base):
             ["routes.version_id", "routes.route_id"],
             name="fk_trips_route",
             ondelete="CASCADE",
-        ),
-        ForeignKeyConstraint(
-            ["version_id", "shape_id"],
-            ["shapes.version_id", "shapes.shape_id"],
-            name="fk_trips_shape",
-            ondelete="SET NULL",
         ),
     )
 

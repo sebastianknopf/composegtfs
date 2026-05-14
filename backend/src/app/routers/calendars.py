@@ -5,7 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
@@ -258,6 +258,25 @@ async def list_calendars(
         .order_by(Calendar.service_id)
     )
     return list(result.scalars().all())
+
+
+@calendars_router.get(
+    "/max-date",
+    response_model=dict,
+    summary="Return the maximum end_date across all calendars for a version",
+    dependencies=[require(Permission.GTFS_EXPORT)],
+)
+async def get_calendars_max_date(
+    version_id: uuid.UUID,
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _get_version_or_404(version_id, session)
+    result = await session.execute(
+        select(func.max(Calendar.end_date)).where(Calendar.version_id == version_id)
+    )
+    max_date: date | None = result.scalar_one_or_none()
+    return {"max_date": max_date.isoformat() if max_date else None}
 
 
 @calendars_router.post(

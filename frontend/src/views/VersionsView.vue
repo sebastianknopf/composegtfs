@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client.js'
 import { toast } from '@/stores/toast.js'
@@ -7,6 +7,7 @@ import { versionsStore } from '@/stores/versions.js'
 import { usePermissions } from '@/composables/usePermissions.js'
 import DataTable from '@/components/DataTable.vue'
 import VersionEditModal from '@/components/VersionEditModal.vue'
+import VersionCopyModal from '@/components/VersionCopyModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import '@material/web/icon/icon.js'
 import '@material/web/button/filled-button.js'
@@ -20,6 +21,20 @@ const canDelete = has('versions:delete')
 // ---- Table ----
 const versions = ref([])
 const loading  = ref(false)
+
+function sortByOrder(rows) {
+  return [...rows].sort((a, b) => {
+    const ao = a.sort_order ?? Infinity
+    const bo = b.sort_order ?? Infinity
+    if (ao !== bo) return ao - bo
+    return a.name.localeCompare(b.name)
+  })
+}
+
+const orderedVersions = ref([])
+watch(versions, (v) => {
+  orderedVersions.value = sortByOrder(v)
+}, { immediate: true, deep: true })
 
 const columns = [
   { key: 'name',       label: () => t('versions.column_name'), sortable: true },
@@ -69,7 +84,9 @@ async function handleSave(data) {
     } else {
       const created = await api.versions.create(data)
       versions.value.push(created)
-      versionsStore.state.versions.push(created)
+      if (!versionsStore.state.versions.some(x => x.id === created.id)) {
+        versionsStore.state.versions.push(created)
+      }
       if (!versionsStore.state.activeVersionId) {
         versionsStore.setActive(created.id)
       }
@@ -79,6 +96,44 @@ async function handleSave(data) {
     saveError.value = err.status === 409
       ? t('versions.error_conflict')
       : t('error.server')
+  }
+}
+
+// ---- Copy modal ----
+const copyModalOpen   = ref(false)
+const copySourceVersion = ref(null)
+
+function openCopy(version) {
+  copySourceVersion.value = version
+  copyModalOpen.value     = true
+}
+
+function handleCopyDone(newVersion) {
+  const v = {
+    id:         newVersion.id,
+    name:       newVersion.name,
+    created_at: newVersion.created_at,
+    sort_order: newVersion.sort_order ?? null,
+  }
+  versions.value.push(v)
+  if (!versionsStore.state.versions.some(x => x.id === v.id)) {
+    versionsStore.state.versions.push(v)
+  }
+  if (!versionsStore.state.activeVersionId) {
+    versionsStore.setActive(v.id)
+  }
+  toast.show(t('version_copy.success', { name: v.name }), 'info')
+}
+
+// ---- Drag & drop reorder ----
+async function handleReorder(newRows) {
+  newRows.forEach((v, i) => { v.sort_order = i })
+  orderedVersions.value = newRows
+  try {
+    await api.versions.reorder(newRows.map(r => r.id))
+  } catch {
+    toast.show(t('error.server'), 'error')
+    await loadVersions()
   }
 }
 
@@ -100,7 +155,7 @@ async function handleConfirmDelete() {
     versions.value = versions.value.filter(v => v.id !== target.id)
     versionsStore.state.versions = versionsStore.state.versions.filter(v => v.id !== target.id)
     if (versionsStore.state.activeVersionId === target.id) {
-      const sorted = [...versionsStore.state.versions].sort((a, b) => a.name.localeCompare(b.name))
+      const sorted = sortByOrder(versionsStore.state.versions)
       versionsStore.setActive(sorted[0]?.id ?? null)
     }
   } catch (err) {
@@ -138,15 +193,24 @@ function formatDate(iso) {
 
     <DataTable
       :columns="columns"
-      :rows="versions"
+      :rows="orderedVersions"
       :loading="loading"
       :empty="t('versions.no_versions')"
-      :pagination="{ pageSize: 25 }"
+      :draggable="canWrite"
+      @reorder="handleReorder"
     >
       <template #cell-created_at="{ value }">
         {{ formatDate(value) }}
       </template>
       <template #actions="{ row }">
+        <button
+          v-if="canWrite"
+          class="table-action-btn"
+          :title="t('version_copy.copy_button')"
+          @click="openCopy(row)"
+        >
+          <md-icon>content_copy</md-icon>
+        </button>
         <button
           v-if="canWrite"
           class="table-action-btn"
@@ -156,7 +220,7 @@ function formatDate(iso) {
           <md-icon>edit</md-icon>
         </button>
         <button
-          v-if="canDelete && versions.length > 1"
+          v-if="canDelete && orderedVersions.length > 1"
           class="table-action-btn table-action-btn--danger"
           :title="t('common.delete')"
           @click="requestDelete(row)"
@@ -173,6 +237,12 @@ function formatDate(iso) {
     :version="editVersion"
     :error="saveError"
     @save="handleSave"
+  />
+
+  <VersionCopyModal
+    v-model="copyModalOpen"
+    :version="copySourceVersion"
+    @done="handleCopyDone"
   />
 
   <ConfirmDialog

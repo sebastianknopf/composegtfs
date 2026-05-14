@@ -168,7 +168,7 @@ function handleConfirm() {
 
   const payload = {
     mode: mode.value,
-    short_name_start: shortNameStart.value.trim() !== '' ? parseInt(shortNameStart.value) : null,
+    short_name_start: shortNameStart.value.trim() !== '' ? shortNameStart.value.trim() : null,
     short_name_step:  shortNameStep.value.trim()  !== '' ? parseInt(shortNameStep.value)  : 1,
     service_id:       selectedServiceId.value !== '' ? selectedServiceId.value : null,
   }
@@ -210,8 +210,8 @@ function handleTimeInput(field, e) {
 <template>
   <md-dialog ref="dialogRef" @closed="handleClose" class="copy-modal">
     <div slot="headline" class="copy-modal__headline">
-      <md-icon>content_copy</md-icon>
-      {{ t('schedule.copy_modal.title') }}
+      <md-icon class="copy-modal__headline-icon">content_copy</md-icon>
+      <span class="copy-modal__headline-title">{{ t('schedule.copy_modal.title') }}</span>
     </div>
 
     <div slot="content" class="copy-modal__content">
@@ -369,7 +369,20 @@ function handleTimeInput(field, e) {
 .copy-modal__headline {
   display: flex;
   align-items: center;
-  gap: var(--size-2, 0.5rem);
+  gap: 0.75rem;
+}
+
+.copy-modal__headline-icon {
+  font-size: 1.5rem;
+  --md-icon-size: 1.5rem;
+  color: var(--md-sys-color-primary, #1f69e0);
+  flex-shrink: 0;
+}
+
+.copy-modal__headline-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface, #222);
 }
 
 .copy-modal__content {

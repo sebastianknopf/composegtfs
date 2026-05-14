@@ -95,7 +95,7 @@ const bottomItems = computed(() => props.items.filter(i => i.position === 'botto
     </div>
 
     <!-- Bottom items -->
-    <div class="app-sidebar__group app-sidebar__group--bottom">
+    <div v-if="bottomItems.length" class="app-sidebar__group app-sidebar__group--bottom">
       <SidebarItem
         v-for="item in bottomItems"
         :key="item.id"

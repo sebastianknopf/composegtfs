@@ -74,6 +74,17 @@ async function save() {
       </div>
     </section>
 
+    <!-- Section: Fahrplan -->
+    <section class="settings-section">
+      <h2 class="settings-section__title">
+        <md-icon class="settings-section__icon">directions_bus</md-icon>
+        {{ t('settings.section_schedule') }}
+      </h2>
+      <div class="settings-section__fields">
+        <p class="settings-section__description">{{ t('settings.graphhopper_local_hint') }}</p>
+      </div>
+    </section>
+
     <!-- Section: System -->
     <section class="settings-section">
       <h2 class="settings-section__title">

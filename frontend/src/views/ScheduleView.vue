@@ -357,6 +357,7 @@ async function confirmDeleteTrips() {
           ref="scheduleTableRef"
           :version-id="versionId"
           :route-id="selectedRoute.route_id"
+          :route-type="selectedRoute.route_type ?? null"
           :direction="direction"
           :platforms="platforms"
           :can-read="canReadSchedule"
@@ -512,13 +513,13 @@ async function confirmDeleteTrips() {
 }
 
 .schedule-filter__chip--active {
-  background: var(--md-sys-color-surface-container-highest, #e6e0e9);
-  border-color: var(--md-sys-color-outline-variant, #cac4d0);
-  color: var(--md-sys-color-on-surface, #1c1b1f);
+  background: color-mix(in srgb, var(--md-sys-color-primary, #1f69e0) 12%, transparent);
+  border-color: var(--md-sys-color-primary, #1f69e0);
+  color: var(--md-sys-color-primary, #1f69e0);
 }
 
 .schedule-filter__chip--active:hover {
-  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest, #e6e0e9) 85%, var(--md-sys-color-on-surface, #1c1b1f));
+  background: color-mix(in srgb, var(--md-sys-color-primary, #1f69e0) 18%, transparent);
 }
 
 .schedule-filter__icon-wrap {

@@ -20,6 +20,7 @@
  * Emits:
  *   page-change  { page, pageSize }   — user requested a different page or page size
  *   sort-change  { key, direction }   — server-side sort: key=null & direction=null means unsorted
+ *   reorder      Array<row>           — draggable=true: user dropped a row; new ordered array
  *
  * Slots:
  *   cell-{key}   — custom cell renderer: <template #cell-name="{ value, row }">
@@ -60,9 +61,13 @@ const props = defineProps({
     type: String,
     default: 'client',
   },
+  draggable: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const emit = defineEmits(['page-change', 'sort-change'])
+const emit = defineEmits(['page-change', 'sort-change', 'reorder'])
 
 const slots = defineSlots()
 const hasActions = computed(() => !!slots.actions)
@@ -128,6 +133,7 @@ const totalRows = computed(() => {
 const totalPages = computed(() => Math.max(1, Math.ceil(totalRows.value / pageSize.value)))
 
 const displayedRows = computed(() => {
+  if (props.draggable) return props.rows
   if (!hasPagination.value || isServerSide.value) return sortedRows.value
   const start = (currentPage.value - 1) * pageSize.value
   return sortedRows.value.slice(start, start + pageSize.value)
@@ -156,6 +162,37 @@ function onPageSizeChange(event) {
 }
 
 const displayEmpty = computed(() => props.empty ?? t('table.empty'))
+
+// ---- Drag & drop (only active when draggable=true) ----
+const dragSrcIndex  = ref(null)
+const dragOverIndex = ref(null)
+
+function onDragStart(event, index) {
+  dragSrcIndex.value = index
+  event.dataTransfer.effectAllowed = 'move'
+}
+
+function onDragOver(event, index) {
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  dragOverIndex.value = index
+}
+
+function onDragEnd() {
+  dragSrcIndex.value  = null
+  dragOverIndex.value = null
+}
+
+function onDrop(event, toIndex) {
+  event.preventDefault()
+  const fromIndex = dragSrcIndex.value
+  onDragEnd()
+  if (fromIndex === null || fromIndex === toIndex) return
+  const items = [...props.rows]
+  const [moved] = items.splice(fromIndex, 1)
+  items.splice(toIndex, 0, moved)
+  emit('reorder', items)
+}
 </script>
 
 <template>
@@ -191,6 +228,7 @@ const displayEmpty = computed(() => props.empty ?? t('table.empty'))
             </span>
           </th>
           <th v-if="hasActions" class="data-table__th data-table__th--actions" scope="col" />
+          <th v-if="draggable" class="data-table__th data-table__th--drag-handle" scope="col" />
         </tr>
       </thead>
 
@@ -205,13 +243,14 @@ const displayEmpty = computed(() => props.empty ?? t('table.empty'))
               <span class="data-table__skeleton data-table__skeleton--icon" />
               <span class="data-table__skeleton data-table__skeleton--icon" />
             </td>
+            <td v-if="draggable" class="data-table__td" />
           </tr>
         </template>
 
         <!-- Empty state -->
         <tr v-else-if="displayedRows.length === 0" class="data-table__row data-table__row--empty">
           <td
-            :colspan="resolvedColumns.length + (hasActions ? 1 : 0)"
+            :colspan="resolvedColumns.length + (hasActions ? 1 : 0) + (draggable ? 1 : 0)"
             class="data-table__td data-table__td--empty"
           >
             {{ displayEmpty }}
@@ -221,9 +260,15 @@ const displayEmpty = computed(() => props.empty ?? t('table.empty'))
         <!-- Data rows -->
         <template v-else>
           <tr
-            v-for="row in displayedRows"
+            v-for="(row, rowIndex) in displayedRows"
             :key="row[rowKey]"
             class="data-table__row"
+            :class="{ 'data-table__row--drag-over': draggable && dragOverIndex === rowIndex && dragSrcIndex !== rowIndex }"
+            :draggable="draggable ? 'true' : undefined"
+            @dragstart="draggable ? onDragStart($event, rowIndex) : undefined"
+            @dragover="draggable ? onDragOver($event, rowIndex) : undefined"
+            @dragend="draggable ? onDragEnd() : undefined"
+            @drop="draggable ? onDrop($event, rowIndex) : undefined"
           >
             <td
               v-for="col in resolvedColumns"
@@ -238,13 +283,16 @@ const displayEmpty = computed(() => props.empty ?? t('table.empty'))
             <td v-if="hasActions" class="data-table__td data-table__td--actions">
               <slot name="actions" :row="row" />
             </td>
+            <td v-if="draggable" class="data-table__td data-table__td--drag-handle">
+              <md-icon class="data-table__drag-icon">drag_indicator</md-icon>
+            </td>
           </tr>
         </template>
       </tbody>
     </table>
 
     <!-- Pagination footer -->
-    <div v-if="hasPagination && !loading" class="data-table-footer">
+    <div v-if="hasPagination && !loading && !draggable" class="data-table-footer">
       <div class="data-table-footer__page-size">
         <span class="data-table-footer__label">{{ t('table.pagination.rows_per_page') }}</span>
         <select
@@ -427,6 +475,32 @@ const displayEmpty = computed(() => props.empty ?? t('table.empty'))
 .data-table-wrapper :deep(.table-action-btn--danger:hover) {
   background: rgba(176, 0, 32, 0.08);
   color: var(--md-sys-color-error, #b00020);
+}
+
+/* Drag & drop */
+.data-table__th--drag-handle {
+  width: 40px;
+}
+
+.data-table__td--drag-handle {
+  color: var(--md-sys-color-outline, #74777f);
+  cursor: grab;
+  user-select: none;
+  padding: 0 0.5rem;
+  text-align: center;
+}
+
+.data-table__td--drag-handle:active {
+  cursor: grabbing;
+}
+
+.data-table__drag-icon {
+  --md-icon-size: 1.25rem;
+  display: block;
+}
+
+.data-table__row--drag-over {
+  background: var(--md-sys-color-surface-container-high, #e4e4e4) !important;
 }
 
 /* Pagination footer */

@@ -144,6 +144,13 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
             PermissionDef("routes:delete", "permissions.routes.delete"),
         ],
     ),
+    PermissionGroup(
+        key="gtfs",
+        lang_key="permissions._groups.gtfs",
+        permissions=[
+            PermissionDef("gtfs:export", "permissions.gtfs.export"),
+        ],
+    ),
 ]
 
 # Flat set of all valid codenames — used for validation on write
@@ -208,6 +215,9 @@ class Permission(str, Enum):
     ROUTES_READ   = "routes:read"
     ROUTES_WRITE  = "routes:write"
     ROUTES_DELETE = "routes:delete"
+
+    # GTFS Export
+    GTFS_EXPORT = "gtfs:export"
 
 
 # ---------------------------------------------------------------------------

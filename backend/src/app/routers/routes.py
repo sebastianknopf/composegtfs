@@ -355,30 +355,22 @@ async def update_route(
         if body.agency_id is not None:
             await _check_agency_exists(version_id, body.agency_id, session)
         route.agency_id = body.agency_id
+
+    # route_short_name and route_type must not be nulled (required fields)
     if body.route_short_name is not None:
         route.route_short_name = body.route_short_name
-    if body.route_long_name is not None:
-        route.route_long_name = body.route_long_name
-    if body.route_desc is not None:
-        route.route_desc = body.route_desc
     if body.route_type is not None:
         route.route_type = body.route_type
-    if body.route_url is not None:
-        route.route_url = body.route_url
-    if body.route_color is not None:
-        route.route_color = body.route_color
-    if body.route_text_color is not None:
-        route.route_text_color = body.route_text_color
-    if body.route_sort_order is not None:
-        route.route_sort_order = body.route_sort_order
-    if body.continuous_pickup is not None:
-        route.continuous_pickup = body.continuous_pickup
-    if body.continuous_drop_off is not None:
-        route.continuous_drop_off = body.continuous_drop_off
-    if body.network_id is not None:
-        route.network_id = body.network_id
-    if body.cemv_support is not None:
-        route.cemv_support = body.cemv_support
+
+    # All other fields support explicit null to clear the value
+    _NULLABLE_ROUTE_FIELDS = (
+        "route_long_name", "route_desc", "route_url",
+        "route_color", "route_text_color", "route_sort_order",
+        "continuous_pickup", "continuous_drop_off", "network_id", "cemv_support",
+    )
+    for field in _NULLABLE_ROUTE_FIELDS:
+        if field in body.model_fields_set:
+            setattr(route, field, getattr(body, field))
 
     await session.commit()
     await session.refresh(route)

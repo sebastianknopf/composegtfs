@@ -182,6 +182,6 @@ function closeDropdown() {
 }
 
 .tag-select__option:hover {
-  background: var(--md-sys-color-surface-container-high, #ece6f0);
+  background: color-mix(in srgb, var(--md-sys-color-primary, #1f69e0) 8%, transparent);
 }
 </style>

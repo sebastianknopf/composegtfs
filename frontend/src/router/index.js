@@ -8,6 +8,8 @@ import SettingsView from '@/views/SettingsView.vue'
 import NetworkView from '@/views/NetworkView.vue'
 import ScheduleView from '@/views/ScheduleView.vue'
 import VersionsView from '@/views/VersionsView.vue'
+import ExchangeView from '@/views/ExchangeView.vue'
+import GtfsExportView from '@/views/GtfsExportView.vue'
 import { authStore } from '@/stores/auth.js'
 import { permissionsStore } from '@/stores/permissions.js'
 import { forbiddenState } from '@/stores/forbidden.js'
@@ -67,6 +69,18 @@ const routes = [
         name: 'versions',
         component: VersionsView,
         meta: { fullscreen: true, permission: 'versions:read' },
+      },
+      {
+        path: 'exchange',
+        name: 'exchange',
+        component: ExchangeView,
+        meta: { section: 'exchange' },
+      },
+      {
+        path: 'gtfs-export',
+        name: 'gtfs-export',
+        component: GtfsExportView,
+        meta: { section: 'exchange', permission: 'gtfs:export' },
       },
     ],
   },

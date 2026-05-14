@@ -113,6 +113,21 @@ export const api = {
     save: (data) => request('PUT', '/settings', data),
   },
 
+  routing: {
+    /**
+     * Check whether the local Graphhopper instance is reachable.
+     * @returns {Promise<{available: boolean}>}
+     */
+    health: () => request('GET', '/route/health'),
+    /**
+     * Calculate a route via the backend Graphhopper proxy.
+     * @param {number} routeType - GTFS route_type, e.g. 3 for Bus
+     * @param {Array<{lat: number, lng: number}>} waypoints - At least 2 points
+     * @returns {Promise<{route_type: number, points: Array<{lat: number, lng: number}>}>}
+     */
+    calculate: (routeType, waypoints) => request('POST', `/route/${encodeURIComponent(routeType)}`, { waypoints }),
+  },
+
   users: {
     list:   ()           => request('GET',    '/users'),
     create: (data)       => request('POST',   '/users', data),
@@ -132,11 +147,12 @@ export const api = {
   },
 
   versions: {
-    list:   ()           => request('GET',    '/versions'),
-    create: (data)       => request('POST',   '/versions', data),
-    get:    (id)         => request('GET',    `/versions/${id}`),
-    rename: (id, data)   => request('PATCH',  `/versions/${id}`, data),
-    delete: (id)         => request('DELETE', `/versions/${id}`),
+    list:    ()              => request('GET',    '/versions'),
+    create:  (data)          => request('POST',   '/versions', data),
+    get:     (id)            => request('GET',    `/versions/${id}`),
+    rename:  (id, data)      => request('PATCH',  `/versions/${id}`, data),
+    delete:  (id)            => request('DELETE', `/versions/${id}`),
+    reorder: (orderedIds)    => request('PUT',    '/versions/reorder', { ordered_ids: orderedIds }),
   },
 
   agencies: {
@@ -148,7 +164,8 @@ export const api = {
   },
 
   calendars: {
-    list:   (versionId)                        => request('GET',    `/versions/${versionId}/calendars`),
+    list:    (versionId)                        => request('GET',    `/versions/${versionId}/calendars`),
+    maxDate: (versionId)                        => request('GET',    `/versions/${versionId}/calendars/max-date`),
     create: (versionId, data)                  => request('POST',   `/versions/${versionId}/calendars`, data),
     get:    (versionId, serviceId)             => request('GET',    `/versions/${versionId}/calendars/${serviceId}`),
     update: (versionId, serviceId, data)       => request('PUT',    `/versions/${versionId}/calendars/${serviceId}`, data),
@@ -227,6 +244,28 @@ export const api = {
     listDates:  (versionId, auxCalendarId)         => request('GET',    `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates`),
     addDates:   (versionId, auxCalendarId, data)   => request('POST',   `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates`, data),
     deleteDate: (versionId, auxCalendarId, date)   => request('DELETE', `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates/${date}`),
+  },
+
+  gtfsExport: {
+    /**
+     * Start a GTFS export and return a ReadableStream of SSE lines.
+     * Each line is a JSON-encoded ExportEvent.
+     *
+     * @param {string} versionId
+     * @param {{ route_ids: string[], date_from: string, date_to: string }} params
+     * @returns {ReadableStream<string>} – stream of raw SSE data lines
+     */
+    start(versionId, params) {
+      const token = localStorage.getItem('access_token')
+      return fetch(`${BASE}/gtfs/export/${versionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(params),
+      })
+    },
   },
 
   /**

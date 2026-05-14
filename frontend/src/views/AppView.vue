@@ -59,6 +59,22 @@ const sections = [
   },
 ]
 
+/**
+ * The exchange section is rendered separately in the TopBar (right-aligned, blue button).
+ */
+const exchangeSection = {
+  id: 'exchange',
+  labelKey: 'sections.exchange',
+  defaultView: 'gtfs-export',
+  views: [
+    { id: 'gtfs-export', labelKey: 'views.gtfs_export', icon: 'file_download', position: 'top', permission: 'gtfs:export' },
+  ],
+}
+
+const visibleExchangeSection = computed(() =>
+  exchangeSection.views.some(v => canSeeEntry(v)) ? exchangeSection : null
+)
+
 /** Returns true if the current user may see a view or section entry. */
 function canSeeEntry(entry) {
   if (!entry.permission) return true
@@ -85,7 +101,8 @@ const isFullscreen = computed(() => !!route.meta?.fullscreen)
 
 // The sidebar items for the active section — filtered by permission
 const sidebarItems = computed(() => {
-  const section = sections.find(s => s.id === activeSection.value)
+  const allSections = [...sections, exchangeSection]
+  const section = allSections.find(s => s.id === activeSection.value)
   return (section?.views ?? []).filter(v => canSeeEntry(v))
 })
 
@@ -93,7 +110,8 @@ const sidebarItems = computed(() => {
 // AppView only needs to know the active section to pass as sectionId.
 
 function onSectionChange(id) {
-  const section = sections.find(s => s.id === id)
+  const allSections = [...sections, exchangeSection]
+  const section = allSections.find(s => s.id === id)
   const target = section?.defaultView ?? section?.views[0]?.id
   if (target) router.push({ name: target })
 }
@@ -116,6 +134,7 @@ function onLogout() {
       :title="settingsStore.state.appTitle"
       :sections="visibleSections"
       :active-section="activeSection"
+      :exchange-section="visibleExchangeSection"
       @section-change="onSectionChange"
       @logout="onLogout"
     />

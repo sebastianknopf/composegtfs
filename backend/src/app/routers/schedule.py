@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 import uuid
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -229,6 +230,7 @@ class ScheduleRouteOut(BaseModel):
     route_color:      str | None
     route_text_color: str | None
     route_sort_order: int | None
+    route_type:       int
 
     model_config = {"from_attributes": True}
 
@@ -554,20 +556,22 @@ async def remove_route_band_stop(
 # ===========================================================================
 
 class ShapeOut(BaseModel):
-    version_id:     uuid.UUID
-    shape_id:       str
-    shape_name:     str | None
-    shape_polyline: str
+    version_id:      uuid.UUID
+    shape_id:        str
+    shape_name:      str | None
+    shape_polyline:  str
+    routed_polyline: str | None
 
     model_config = {"from_attributes": True}
 
 
 class ShapeCreate(BaseModel):
-    shape_id:       str
-    shape_name:     str | None = None
-    shape_polyline: str
+    shape_id:        str
+    shape_name:      str | None = None
+    shape_polyline:  str
+    routed_polyline: str | None = None
     apply_to_pattern: bool = False
-    pattern_hash:   str | None = None
+    pattern_hash:    str | None = None
 
     @field_validator("shape_id")
     @classmethod
@@ -587,10 +591,11 @@ class ShapeCreate(BaseModel):
 
 
 class ShapeUpdate(BaseModel):
-    shape_name:     str | None = None
-    shape_polyline: str
+    shape_name:      str | None = None
+    shape_polyline:  str
+    routed_polyline: str | None = None
     apply_to_pattern: bool = False
-    pattern_hash:   str | None = None
+    pattern_hash:    str | None = None
 
     @field_validator("shape_polyline")
     @classmethod
@@ -661,6 +666,7 @@ async def create_shape(
         shape_id=body.shape_id,
         shape_name=(body.shape_name.strip() if body.shape_name is not None else None),
         shape_polyline=body.shape_polyline,
+        routed_polyline=body.routed_polyline,
     )
     session.add(shape)
     await session.commit()
@@ -714,6 +720,7 @@ async def update_shape(
 
     shape.shape_name = body.shape_name.strip() if body.shape_name is not None else None
     shape.shape_polyline = body.shape_polyline
+    shape.routed_polyline = body.routed_polyline
     await session.commit()
     await session.refresh(shape)
 
@@ -1167,8 +1174,18 @@ class TripBatchCopyRequest(BaseModel):
     mode:              str                      # "shift" | "headway"
     shift:             TripBatchCopyShift  | None = None
     headway:           TripBatchCopyHeadway | None = None
-    short_name_start:  int | None = None        # optional running short name start
+    short_name_start:  str | None = None        # optional running short name start (string to preserve leading zeros)
     short_name_step:   int = 1                  # step between short names (default 1)
+
+    @field_validator("short_name_start")
+    @classmethod
+    def validate_short_name_start(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        stripped = v.lstrip('-')
+        if not stripped.isdigit():
+            raise ValueError("short_name_start must be an integer string")
+        return v
     service_id:        str | None = None        # optional day-type override
 
     @field_validator("mode")
@@ -1256,9 +1273,10 @@ async def batch_copy_trips(
 
     def _create_trip_copy(source: Trip, offset_secs: int, service_id_override: str | None,
                           short_name_override: str | None) -> Trip:
+        direction_str = str(source.direction_id) if source.direction_id is not None else "0"
         new_trip = Trip(
             version_id=version_id,
-            trip_id=str(uuid.uuid4()),
+            trip_id=f"{route_id}-{direction_str}-{secrets.token_hex(3)}",
             route_id=route_id,
             service_id=service_id_override if service_id_override is not None else source.service_id,
             direction_id=source.direction_id,
@@ -1325,7 +1343,9 @@ async def batch_copy_trips(
         for offset_secs in offsets:
             short_name: str | None = None
             if req.short_name_start is not None:
-                short_name = str(req.short_name_start + short_name_counter * req.short_name_step)
+                pad_width = len(req.short_name_start.lstrip('-'))
+                numeric = int(req.short_name_start) + short_name_counter * req.short_name_step
+                short_name = str(numeric).zfill(pad_width)
             short_name_counter += 1
 
             new_trip = _create_trip_copy(source_trip, offset_secs, req.service_id, short_name)
@@ -1403,9 +1423,14 @@ class StopTimeUpsert(BaseModel):
         if v is None:
             return v
         import re
-        if not re.fullmatch(r"\d+:\d{2}(:\d{2})?", v.strip()):
+        raw = v.strip()
+        if not re.fullmatch(r"\d+:\d{2}(:\d{2})?", raw):
             raise ValueError("Time must be in H:MM or H:MM:SS format")
-        return v.strip()
+        parts = raw.split(":")
+        hh = parts[0].zfill(2)
+        mm = parts[1]
+        ss = parts[2] if len(parts) == 3 else "00"
+        return f"{hh}:{mm}:{ss}"
 
 
 # ---- Endpoints -------------------------------------------------------------

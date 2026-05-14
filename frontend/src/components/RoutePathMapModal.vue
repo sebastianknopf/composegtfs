@@ -4,21 +4,25 @@ import { useI18n } from 'vue-i18n'
 import { z } from 'zod'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { api } from '@/api/client.js'
 import { settingsStore } from '@/stores/settings.js'
 import '@material/web/dialog/dialog.js'
 import '@material/web/textfield/outlined-text-field.js'
 import '@material/web/button/text-button.js'
 import '@material/web/button/filled-button.js'
+import '@material/web/checkbox/checkbox.js'
 import '@material/web/icon/icon.js'
 
 const props = defineProps({
-  modelValue:         { type: Boolean, default: false },
-  shapeId:            { type: String,  default: '' },
-  initialName:        { type: String,  default: '' },
-  servedStops:        { type: Array,   default: () => [] },
-  existingPolyline:   { type: String,  default: null },
-  loading:            { type: Boolean, default: false },
-  serverError:        { type: String,  default: null },
+  modelValue:              { type: Boolean, default: false },
+  shapeId:                 { type: String,  default: '' },
+  initialName:             { type: String,  default: '' },
+  servedStops:             { type: Array,   default: () => [] },
+  existingPolyline:        { type: String,  default: null },
+  existingRoutedPolyline:  { type: String,  default: null },
+  routeType:               { type: Number,  default: null },
+  loading:                 { type: Boolean, default: false },
+  serverError:             { type: String,  default: null },
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
@@ -35,6 +39,35 @@ const editableWaypoints = ref([]) // [lon, lat]
 const selectedWaypointIndex = ref(-1)
 const isDraggingWaypoint = ref(false)
 const didDragWaypoint = ref(false)
+
+// Routing state
+const routingAvailable = ref(false)   // true once health check passes
+const autoRoute = ref(true)
+const routedCoords = ref([])  // [[lon, lat], ...] decoded from Graphhopper response
+const isRouting = ref(false)
+const routingError = ref(null)
+let routingDebounceTimer = null
+let routingGeneration = 0
+
+// GTFS rail-based route types for which routing is not supported by Graphhopper.
+const UNSUPPORTED_ROUTE_TYPES = new Set([0, 1, 2, 5, 7, 12])
+
+// Routing is only shown when GH is available AND the route type is supported.
+const routingSupported = computed(() =>
+  routingAvailable.value &&
+  props.routeType !== null &&
+  props.routeType !== undefined &&
+  !UNSUPPORTED_ROUTE_TYPES.has(props.routeType)
+)
+
+async function checkRoutingHealth() {
+  try {
+    const res = await api.routing.health()
+    routingAvailable.value = res.available === true
+  } catch {
+    routingAvailable.value = false
+  }
+}
 
 function clearFieldError(name) {
   fieldErrors.value[name] = null
@@ -132,6 +165,12 @@ function findStopMetaForWaypoint(point) {
 }
 
 function initializeWaypoints() {
+  // Invalidate any in-flight routing request
+  routingGeneration++
+
+  autoRoute.value = true
+  routingError.value = null
+
   if (props.existingPolyline) {
     editableWaypoints.value = decodePolyline(props.existingPolyline)
   } else {
@@ -140,12 +179,53 @@ function initializeWaypoints() {
       .map(stop => [stop.stop_lon, stop.stop_lat])
   }
 
+  // Pre-populate routedCoords from stored routed_polyline so the line is
+  // shown immediately before the fresh routing request completes.
+  routedCoords.value = props.existingRoutedPolyline
+    ? decodePolyline(props.existingRoutedPolyline)
+    : []
+
   if (editableWaypoints.value.length > 0) {
     selectedWaypointIndex.value = editableWaypoints.value.length - 1
   } else {
     selectedWaypointIndex.value = -1
   }
 }
+
+async function triggerRouting() {
+  if (!routingSupported.value || !autoRoute.value || editableWaypoints.value.length < 2) return
+  const gen = ++routingGeneration
+  isRouting.value = true
+  routingError.value = null
+  try {
+    const waypoints = editableWaypoints.value.map(([lng, lat]) => ({ lat, lng }))
+    const result = await api.routing.calculate(props.routeType, waypoints)
+    if (gen !== routingGeneration) return // stale response — discard
+    routedCoords.value = result.points.map(p => [p.lng, p.lat])
+    refreshMapData()
+  } catch (err) {
+    if (gen !== routingGeneration) return
+    const code = err?.status ?? 502
+    routingError.value = t('schedule.route_path_modal.routing_error', { code })
+    routedCoords.value = []
+    refreshMapData()
+  } finally {
+    if (gen === routingGeneration) isRouting.value = false
+  }
+}
+
+function scheduleRouting() {
+  if (!routingSupported.value || !autoRoute.value) return
+  clearTimeout(routingDebounceTimer)
+  routingDebounceTimer = setTimeout(triggerRouting, 500)
+}
+
+// The coordinates to draw as the route line: routed when available, otherwise straight segments.
+const displayLineCoords = computed(() =>
+  autoRoute.value && routedCoords.value.length >= 2
+    ? routedCoords.value
+    : editableWaypoints.value
+)
 
 const mapCoords = computed(() => editableWaypoints.value)
 
@@ -194,12 +274,12 @@ const waypointData = computed(() => ({
 
 const lineData = computed(() => ({
   type: 'FeatureCollection',
-  features: mapCoords.value.length >= 2
+  features: displayLineCoords.value.length >= 2
     ? [{
         type: 'Feature',
         geometry: {
           type: 'LineString',
-          coordinates: mapCoords.value,
+          coordinates: displayLineCoords.value,
         },
         properties: {},
       }]
@@ -236,19 +316,27 @@ function validateForm() {
 
 function handleSave() {
   if (!validateForm()) return
+  const routedPolyline = autoRoute.value && routedCoords.value.length >= 2
+    ? encodePolyline(routedCoords.value)
+    : null
   emit('save', {
     shape_id: props.shapeId,
     shape_name: form.value.shape_name.trim(),
     shape_polyline: encodePolyline(mapCoords.value),
+    routed_polyline: routedPolyline,
   })
 }
 
 function handleSaveAndDistribute() {
   if (!validateForm()) return
+  const routedPolyline = autoRoute.value && routedCoords.value.length >= 2
+    ? encodePolyline(routedCoords.value)
+    : null
   emit('save', {
     shape_id: props.shapeId,
     shape_name: form.value.shape_name.trim(),
     shape_polyline: encodePolyline(mapCoords.value),
+    routed_polyline: routedPolyline,
     apply_to_pattern: true,
     pattern_hash: props.shapeId,
   })
@@ -272,6 +360,7 @@ function deleteWaypoint(index) {
   }
 
   refreshMapData()
+  scheduleRouting()
 }
 
 function waypointIndexFromFeature(feature) {
@@ -407,6 +496,7 @@ async function ensureMap() {
       didDragWaypoint.value = true
       editableWaypoints.value.splice(index, 1, [e.lngLat.lng, e.lngLat.lat])
       refreshMapData()
+      scheduleRouting()
     })
 
     const stopDraggingWaypoint = () => {
@@ -467,19 +557,25 @@ async function ensureMap() {
       editableWaypoints.value.splice(insertIndex, 0, [lon, lat])
       selectedWaypointIndex.value = insertIndex
       refreshMapData()
+      scheduleRouting()
     })
   })
 }
 
 function fitMapBounds() {
-  if (!map || mapCoords.value.length === 0) return
-  if (mapCoords.value.length === 1) {
-    map.jumpTo({ center: mapCoords.value[0], zoom: 14 })
+  if (!map) return
+  // Prefer the routed line for bounds; fall back to waypoints
+  const coords = displayLineCoords.value.length >= 2
+    ? displayLineCoords.value
+    : editableWaypoints.value
+  if (coords.length === 0) return
+  if (coords.length === 1) {
+    map.jumpTo({ center: coords[0], zoom: 14 })
     return
   }
 
-  const bounds = new maplibregl.LngLatBounds(mapCoords.value[0], mapCoords.value[0])
-  for (const coord of mapCoords.value) {
+  const bounds = new maplibregl.LngLatBounds(coords[0], coords[0])
+  for (const coord of coords) {
     bounds.extend(coord)
   }
   map.fitBounds(bounds, { padding: 60, duration: 0 })
@@ -513,25 +609,47 @@ watch(
       refreshMapData()
       map?.resize()
       fitMapBounds()
+      // Check Graphhopper availability, then auto-route if applicable.
+      await checkRoutingHealth()
+      // Only auto-route on open when there is no stored routed polyline yet.
+      // If one exists, initializeWaypoints() already loaded it into routedCoords.
+      if (routingSupported.value && !props.existingRoutedPolyline) {
+        triggerRouting()
+      }
     } else {
+      clearTimeout(routingDebounceTimer)
       dialog.close?.()
     }
   },
 )
 
 watch(
-  () => [props.servedStops, props.initialName, props.existingPolyline],
+  () => [props.servedStops, props.initialName, props.existingPolyline, props.existingRoutedPolyline],
   () => {
     if (!props.modelValue) return
     form.value.shape_name = props.initialName ?? ''
     initializeWaypoints()
     refreshMapData()
     map?.resize()
+    if (routingSupported.value && !props.existingRoutedPolyline) {
+      triggerRouting()
+    }
   },
   { deep: true },
 )
 
+watch(autoRoute, (val) => {
+  if (!val) {
+    clearTimeout(routingDebounceTimer)
+    routedCoords.value = []
+    refreshMapData()
+  } else {
+    triggerRouting()
+  }
+})
+
 onBeforeUnmount(() => {
+  clearTimeout(routingDebounceTimer)
   map?.remove()
   map = null
 })
@@ -599,7 +717,26 @@ onBeforeUnmount(() => {
     </form>
 
     <div slot="actions">
-      <p v-if="localError || serverError" class="route-path-modal__error">{{ localError || serverError }}</p>
+      <div class="route-path-modal__actions-left">
+        <label v-if="routingSupported" class="route-path-modal__auto-route-label">
+          <md-checkbox
+            :checked="autoRoute"
+            touch-target="wrapper"
+            @change="autoRoute = $event.target.checked"
+          />
+          <span>{{ t('schedule.route_path_modal.auto_route') }}</span>
+        </label>
+        <span v-else-if="routingAvailable && !routingSupported" class="route-path-modal__routing-unavailable">
+          {{ t('schedule.route_path_modal.routing_unsupported_type') }}
+        </span>
+        <span v-if="isRouting" class="route-path-modal__routing-indicator">
+          <md-icon class="route-path-modal__routing-spinner">sync</md-icon>
+          {{ t('schedule.route_path_modal.routing_in_progress') }}
+        </span>
+        <p v-if="localError || serverError || routingError" class="route-path-modal__error">
+          {{ localError || serverError || routingError }}
+        </p>
+      </div>
       <md-text-button @click="handleClose">{{ t('common.cancel') }}</md-text-button>
       <md-filled-button :disabled="loading" @click="handleSaveAndDistribute">
         <md-icon slot="icon">send</md-icon>
@@ -618,8 +755,8 @@ onBeforeUnmount(() => {
   --md-dialog-container-shape: 6px;
   --md-dialog-container-color: #ffffff;
   width: min(1516px, 98vw);
-  height: 860px;
-  max-height: 860px;
+  height: 710px;
+  max-height: 710px;
   overflow: hidden;
 }
 
@@ -654,7 +791,7 @@ onBeforeUnmount(() => {
   grid-template-rows: auto 1fr;
   gap: 1.25rem;
   padding-top: 0.5rem;
-  height: 700px;
+  height: 550px;
   min-height: 0;
   overflow: hidden;
 }
@@ -705,9 +842,45 @@ onBeforeUnmount(() => {
 }
 
 .route-path-modal__error {
-  margin: 0 auto 0 0;
+  margin: 0;
   font-size: 0.8125rem;
   color: var(--md-sys-color-error, #ba1a1a);
+}
+
+.route-path-modal__actions-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-right: auto;
+  flex-wrap: wrap;
+}
+
+.route-path-modal__auto-route-label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--md-sys-color-on-surface, #222);
+  cursor: pointer;
+  user-select: none;
+}
+
+.route-path-modal__routing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--md-sys-color-primary, #1f69e0);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.route-path-modal__routing-spinner {
+  font-size: 1rem;
+  --md-icon-size: 1rem;
+  animation: spin 1s linear infinite;
 }
 
 .route-path-modal__waypoints {

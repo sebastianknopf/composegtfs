@@ -48,5 +48,27 @@ services:
     depends_on:
       - backend
 
+  # ── Graphhopper (optional) ──────────────────────────────────────────────────
+  # Start with: docker compose --profile graphhopper up
+  graphhopper:
+    build:
+      context: ./graphhopper
+    profiles:
+      - graphhopper
+    environment:
+      # URL of the .osm.pbf file to download on first start (if /data/map.osm.pbf
+      # is not already present in the named volume).
+      OSM_PBF_URL: ${OSM_PBF_URL:-}
+      # Java heap settings – tune to available memory.
+      JAVA_OPTS: ${GH_JAVA_OPTS:--Xmx1g -Xms512m}
+    volumes:
+      - ./graphhopper/config.yml:/config/config.yml:ro
+      - ./graphhopper/profiles:/config/profiles:ro
+      - graphhopper_data:/data
+    expose:
+      - "8989"
+    restart: unless-stopped
+
 volumes:
   pgsqldata:
+  graphhopper_data:

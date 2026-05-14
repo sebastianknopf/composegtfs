@@ -24,7 +24,12 @@ async function load() {
     // If the stored ID is no longer valid, auto-select first alphabetically
     const valid = state.versions.find(v => v.id === state.activeVersionId)
     if (!valid && state.versions.length > 0) {
-      const sorted = [...state.versions].sort((a, b) => a.name.localeCompare(b.name))
+      const sorted = [...state.versions].sort((a, b) => {
+        const ao = a.sort_order ?? Infinity
+        const bo = b.sort_order ?? Infinity
+        if (ao !== bo) return ao - bo
+        return a.name.localeCompare(b.name)
+      })
       setActive(sorted[0].id)
     }
   } catch {

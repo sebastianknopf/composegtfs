@@ -28,6 +28,7 @@ import '@material/web/progress/circular-progress.js'
 const props = defineProps({
   versionId:         { type: String,  default: null },
   routeId:           { type: String,  default: null },
+  routeType:         { type: Number,  default: null },
   direction:         { type: Number,  default: 0 },
   platforms:         { type: Array,   default: () => [] },
   canRead:           { type: Boolean, default: false },
@@ -40,8 +41,9 @@ const { t } = useI18n()
 
 // ---- Band data ----
 const bandEntries = ref([])
-const loading     = ref(false)
-const tableRef    = ref(null)
+const _loadingCount = ref(0)
+const loading       = computed(() => _loadingCount.value > 0)
+const tableRef      = ref(null)
 
 // Build lookup maps from platforms array
 const platformMap = computed(() => {
@@ -117,11 +119,14 @@ function promoteDummy({ entryId = null, fieldName = null } = {}) {
     let el
     if (entryId !== null) {
       el = tableRef.value?.querySelector(`[data-trip="${newId}"][data-entry="${entryId}"]`)
+      el?.focus()
+      el?.select()
     } else if (fieldName !== null) {
       el = tableRef.value?.querySelector(`[data-trip="${newId}"][data-field="${fieldName}"]`)
+      el?.focus()
+      // Place cursor at end, don't select – user is mid-typing
+      if (el) el.setSelectionRange(el.value.length, el.value.length)
     }
-    el?.focus()
-    el?.select()
   })
 }
 
@@ -174,6 +179,7 @@ async function loadTrips() {
     return
   }
   const key = ++_tripLoadKey
+  _loadingCount.value++
   try {
     const backendTrips = await api.schedule.trips.list(props.versionId, props.routeId, props.direction)
     // Load all stop-time lists in parallel
@@ -236,6 +242,8 @@ async function loadTrips() {
     await ensureShapeLabels(mapped.map(trip => trip.route_path).filter(Boolean))
   } catch {
     if (key === _tripLoadKey) trips.value = []
+  } finally {
+    _loadingCount.value--
   }
 }
 
@@ -360,13 +368,13 @@ async function loadBand() {
     bandEntries.value = []
     return
   }
-  loading.value = true
+  _loadingCount.value++
   try {
     bandEntries.value = await api.schedule.band.get(props.versionId, props.routeId, props.direction)
   } catch {
     bandEntries.value = []
   } finally {
-    loading.value = false
+    _loadingCount.value--
   }
 }
 
@@ -569,6 +577,7 @@ const routePathModalOpen = ref(false)
 const routePathModalTripId = ref(null)  // trip.id | 'dummy' | null
 const routePathModalShapeName = ref('')
 const routePathModalExistingPolyline = ref(null)
+const routePathModalExistingRoutedPolyline = ref(null)
 const routePathModalServerError = ref(null)
 const routePathModalSaving = ref(false)
 
@@ -602,6 +611,7 @@ async function openRoutePathModal(id) {
   routePathModalTripId.value = id
   routePathModalShapeName.value = ''
   routePathModalExistingPolyline.value = null
+  routePathModalExistingRoutedPolyline.value = null
   routePathModalServerError.value = null
 
   const trip = id === 'dummy'
@@ -613,6 +623,7 @@ async function openRoutePathModal(id) {
       const shape = await api.schedule.shapes.get(props.versionId, trip.route_path)
       routePathModalShapeName.value = shape.shape_name ?? shape.shape_id
       routePathModalExistingPolyline.value = shape.shape_polyline ?? null
+      routePathModalExistingRoutedPolyline.value = shape.routed_polyline ?? null
       shapeLabelById.value = {
         ...shapeLabelById.value,
         [shape.shape_id]: shape.shape_name ?? shape.shape_id,
@@ -642,6 +653,7 @@ async function saveRoutePathFromModal(payload) {
       await api.schedule.shapes.update(props.versionId, payload.shape_id, {
         shape_name: payload.shape_name,
         shape_polyline: payload.shape_polyline,
+        routed_polyline: payload.routed_polyline ?? null,
         apply_to_pattern: !!payload.apply_to_pattern,
         pattern_hash: payload.pattern_hash ?? null,
       })
@@ -1557,6 +1569,8 @@ defineExpose({
       :initial-name="routePathModalShapeName"
       :served-stops="routePathModalServedStops"
       :existing-polyline="routePathModalExistingPolyline"
+      :existing-routed-polyline="routePathModalExistingRoutedPolyline"
+      :route-type="props.routeType"
       :loading="routePathModalSaving"
       :server-error="routePathModalServerError"
       @save="saveRoutePathFromModal"

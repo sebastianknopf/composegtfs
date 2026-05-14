@@ -19,6 +19,10 @@ defineProps({
     type: String,
     default: null,
   },
+  exchangeSection: {
+    type: Object,
+    default: null,
+  },
 })
 
 const emit = defineEmits(['section-change', 'logout'])
@@ -46,6 +50,15 @@ const emit = defineEmits(['section-change', 'logout'])
     </nav>
 
     <div class="app-topbar__actions">
+      <button
+        v-if="exchangeSection"
+        class="app-topbar__exchange-btn"
+        :class="{ 'app-topbar__exchange-btn--active': exchangeSection.id === activeSection }"
+        @click="emit('section-change', exchangeSection.id)"
+      >
+        {{ t(exchangeSection.labelKey) }}
+      </button>
+
       <LangSwitcher />
 
       <button

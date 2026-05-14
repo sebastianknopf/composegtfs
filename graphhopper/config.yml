@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Graphhopper configuration – routing API only
+#
+# The OSM input file is injected at runtime via the entrypoint script
+# (-Ddw.graphhopper.datareader.file=...), so datareader.file here is only
+# a fallback placeholder.
+#
+# Custom profiles
+# ───────────────
+# Place custom-model JSON files in ./profiles/ (mounted as /config/profiles/).
+# Set custom_models.directory to /config/profiles and reference only the
+# bare filename in custom_model_files (no path separators allowed).
+# Then add a new entry to the `profiles` list below, for example:
+#
+#   - name: my_custom
+#     custom_model_files: [my_custom.json]
+#
+# A matching entry in `profiles_ch` is recommended for each profile so
+# Contraction Hierarchies are precomputed (fast online routing).
+# ─────────────────────────────────────────────────────────────────────────────
+
+graphhopper:
+  datareader.file: /data/map.osm.pbf
+  graph.location: /data/graph-cache
+
+  # ── Encoded values required by the built-in car and bus custom models ────────
+  # max_weight/max_width/max_height are needed by bus.json for size restrictions.
+  graph.encoded_values: car_access, car_average_speed, road_access, bus_access, road_class, max_weight, max_width, max_height
+
+  # ── Routing profiles ────────────────────────────────────────────────────────
+  # GH 9+ uses custom model files instead of vehicle/weighting fields.
+  # car.json is bundled inside the graphhopper-web jar.
+  # bus.json is mounted from ./profiles/ (custom, PSV-aware routing).
+  # custom_models.directory points to the directory that contains all external
+  # custom model files; only the bare filename is used in custom_model_files.
+  custom_models.directory: /config/profiles
+  profiles:
+    - name: car
+      custom_model_files: [car_default.json]
+    - name: bus_default
+      custom_model_files: [bus_default.json]
+    - name: rail_default
+      custom_model_files: [rail_default.json]
+
+  # Precompute Contraction Hierarchies for each profile (fast routing).
+  profiles_ch:
+    - profile: car
+    - profile: bus_default
+    - profile: rail_default
+
+  # ── Reduce graph size for motorized-only routing ─────────────────────────────
+  import.osm.ignored_highways: footway,construction,cycleway,path,steps
+
+# ── Dropwizard / HTTP server ──────────────────────────────────────────────────
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
+  # Admin port – accessible only within the Docker network
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: 0.0.0.0

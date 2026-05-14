@@ -123,8 +123,8 @@ function handleInput(e) {
 <template>
   <md-dialog ref="dialogRef" @closed="handleClose" class="shift-dialog">
     <div slot="headline" class="shift-dialog__headline">
-      <md-icon>swap_horiz</md-icon>
-      {{ t('schedule.shift_modal.title') }}
+      <md-icon class="shift-dialog__headline-icon">swap_horiz</md-icon>
+      <span class="shift-dialog__headline-title">{{ t('schedule.shift_modal.title') }}</span>
     </div>
 
     <div slot="content" class="shift-dialog__content">
@@ -187,7 +187,20 @@ function handleInput(e) {
 .shift-dialog__headline {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
+}
+
+.shift-dialog__headline-icon {
+  font-size: 1.5rem;
+  --md-icon-size: 1.5rem;
+  color: var(--md-sys-color-primary, #1f69e0);
+  flex-shrink: 0;
+}
+
+.shift-dialog__headline-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface, #222);
 }
 
 .shift-dialog__content {

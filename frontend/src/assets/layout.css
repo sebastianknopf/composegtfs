@@ -247,6 +247,29 @@ html, body {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.app-topbar__exchange-btn {
+  background: var(--md-sys-color-primary, #1f69e0);
+  border: none;
+  cursor: pointer;
+  color: var(--md-sys-color-on-primary, #ffffff);
+  padding: var(--size-2, 0.5rem) var(--size-3, 0.75rem);
+  border-radius: 6px;
+  font-size: var(--font-size-1, 0.875rem);
+  font-family: inherit;
+  font-weight: 500;
+  transition: filter 0.15s ease;
+  white-space: nowrap;
+  margin-right: var(--size-3, 0.75rem);
+}
+
+.app-topbar__exchange-btn:hover {
+  filter: brightness(1.12);
+}
+
+.app-topbar__exchange-btn--active {
+  filter: brightness(0.88);
+}
+
 /* -- App body: sidebar + main -- */
 
 .app-body {
@@ -473,12 +496,14 @@ html, body {
 }
 
 .perspective-tab:hover {
-  color: var(--md-sys-color-on-surface, #222);
+  color: var(--md-sys-color-primary, #1f69e0);
+  background: color-mix(in srgb, var(--md-sys-color-primary, #1f69e0) 8%, transparent);
 }
 
 .perspective-tab--active {
   color: var(--md-sys-color-primary, #1f69e0);
   border-bottom-color: var(--md-sys-color-primary, #1f69e0);
+  background: color-mix(in srgb, var(--md-sys-color-primary, #1f69e0) 10%, transparent);
 }
 
 .perspective-tab__icon {

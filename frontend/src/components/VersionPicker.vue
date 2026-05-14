@@ -21,7 +21,12 @@ const dropdownRef = ref(null)
 const dropdownStyle = ref({})
 
 const sortedVersions = computed(() =>
-  [...versionsStore.state.versions].sort((a, b) => a.name.localeCompare(b.name))
+  [...versionsStore.state.versions].sort((a, b) => {
+    const ao = a.sort_order ?? Infinity
+    const bo = b.sort_order ?? Infinity
+    if (ao !== bo) return ao - bo
+    return a.name.localeCompare(b.name)
+  })
 )
 
 function openDropdown() {
