@@ -11,6 +11,10 @@ defineProps({
     type: String,
     default: 'composegtfs',
   },
+  appVersion: {
+    type: String,
+    default: '',
+  },
   sections: {
     type: Array,
     default: () => [],
@@ -31,6 +35,7 @@ const emit = defineEmits(['section-change', 'logout'])
 <template>
   <header class="app-topbar" role="banner">
     <span class="app-topbar__title">{{ title }}</span>
+    <span v-if="appVersion" class="app-topbar__version">v{{ appVersion }}</span>
 
     <VersionPicker />
 

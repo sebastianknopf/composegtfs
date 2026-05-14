@@ -7,6 +7,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 
+# Ensure line-ending normalisation so setuptools_scm can read git state
+# correctly regardless of the host OS.
+RUN git config --global core.autocrlf true
+
 # Copy Git metadata and everything else for the backend container
 # Remove the .env file and local venv so the container starts clean
 # IMPORTANT: Remove ONLY untracked files; keeping git metadata intact

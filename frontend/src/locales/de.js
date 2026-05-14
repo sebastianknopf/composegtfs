@@ -30,7 +30,7 @@ export default {
     masterdata: 'Stammdaten',
     network: 'Netz',
     schedule: 'Fahrplan',
-    exchange: 'Schnittstellen',
+    exchange: 'Export',
   },
   views: {
     agency: 'Unternehmen',

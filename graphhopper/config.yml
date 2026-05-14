@@ -39,14 +39,11 @@ graphhopper:
       custom_model_files: [car_default.json]
     - name: bus_default
       custom_model_files: [bus_default.json]
-    - name: rail_default
-      custom_model_files: [rail_default.json]
 
   # Precompute Contraction Hierarchies for each profile (fast routing).
   profiles_ch:
     - profile: car
     - profile: bus_default
-    - profile: rail_default
 
   # ── Reduce graph size for motorized-only routing ─────────────────────────────
   import.osm.ignored_highways: footway,construction,cycleway,path,steps

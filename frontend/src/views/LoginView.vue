@@ -65,6 +65,10 @@ async function handleLogin(event) {
             {{ authStore.state.loading ? '…' : t('login.button') }}
           </md-filled-button>
         </div>
+        
+        <p v-if="settingsStore.state.appVersion" class="login-card__version">
+          v{{ settingsStore.state.appVersion }}
+        </p>
       </form>
 
       <div class="login-card__footer">

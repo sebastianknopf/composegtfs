@@ -7,6 +7,7 @@ const DEFAULT_MAP_TILE_URL = 'https://tiles.openfreemap.org/styles/positron'
 const state = reactive({
   appTitle: DEFAULT_TITLE,
   mapTileUrl: DEFAULT_MAP_TILE_URL,
+  appVersion: '',
 })
 
 async function load() {
@@ -16,6 +17,12 @@ async function load() {
     state.mapTileUrl = data.map_tile_url || DEFAULT_MAP_TILE_URL
   } catch {
     // keep defaults
+  }
+  try {
+    const data = await api.version()
+    state.appVersion = data.version || ''
+  } catch {
+    // keep empty – non-critical
   }
 }
 

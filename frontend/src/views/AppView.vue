@@ -132,6 +132,7 @@ function onLogout() {
   <div class="app-layout">
     <AppTopBar
       :title="settingsStore.state.appTitle"
+      :app-version="settingsStore.state.appVersion"
       :sections="visibleSections"
       :active-section="activeSection"
       :exchange-section="visibleExchangeSection"

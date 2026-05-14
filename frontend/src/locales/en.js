@@ -30,7 +30,7 @@ export default {
     masterdata: 'Master Data',
     network: 'Network',
     schedule: 'Schedule',
-    exchange: 'Interfaces',
+    exchange: 'Export',
   },
   views: {
     agency: 'Agency',

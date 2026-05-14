@@ -181,17 +181,12 @@ async function loadTrips() {
   const key = ++_tripLoadKey
   _loadingCount.value++
   try {
+    // Stop times are embedded in the list response – no per-trip requests needed.
     const backendTrips = await api.schedule.trips.list(props.versionId, props.routeId, props.direction)
-    // Load all stop-time lists in parallel
-    const stopTimesArr = await Promise.all(
-      backendTrips.map(bt =>
-        api.schedule.stopTimes.list(props.versionId, props.routeId, bt.trip_id).catch(() => [])
-      )
-    )
     if (key !== _tripLoadKey) return  // navigation happened during fetch
 
-    const mapped = backendTrips.map((bt, i) => {
-      const stList = stopTimesArr[i]
+    const mapped = backendTrips.map((bt) => {
+      const stList = bt.stop_times ?? []
       const times = {}
       const stopTimes = {}
       for (const st of stList) {
@@ -898,7 +893,11 @@ function onTimeInput(event, times, key) {
 function onTimeBlur(event, times, key, trip = null) {
   const val = (times[key] ?? '').trim()
   if (!val) {
-    // Cleared — delete stop time from backend if the trip is already saved
+    // Cleared — reset all stop-time attributes in the frontend state
+    if (trip) {
+      delete trip.stopTimes[key]
+    }
+    // Delete stop time from backend if the trip is already saved
     if (trip?.saved) {
       deleteStopTimeFromBackend(trip, key)
     }

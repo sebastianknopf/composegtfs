@@ -5,6 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import SlidingTokenMiddleware
 from app.config import settings
+
+try:
+    from app._version import version as _app_version
+except ImportError:
+    _app_version = "0.0.0.dev0"
 from app.routers import auth as auth_router
 from app.routers import groups as groups_router
 from app.routers import permissions as permissions_router
@@ -21,7 +26,7 @@ from app.routers import gtfs_export as gtfs_export_router
 
 app = FastAPI(
     title="composegtfs",
-    version="0.1.0",
+    version=_app_version,
     docs_url="/api/docs" if settings.docs_enabled else None,
     redoc_url="/api/redoc" if settings.docs_enabled else None,
     openapi_url="/api/openapi.json" if settings.docs_enabled else None,
@@ -58,3 +63,9 @@ app.include_router(gtfs_export_router.router)
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+async def version() -> dict[str, str]:
+    """Return the running application version. No authentication required."""
+    return {"version": _app_version}

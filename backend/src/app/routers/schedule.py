@@ -846,12 +846,36 @@ class TripUpdate(BaseModel):
         return v
 
 
+class EmbeddedStopTimeOut(BaseModel):
+    """Stop time embedded inside a TripWithStopTimesOut response.
+
+    Omits version_id and trip_id (redundant in this context).
+    """
+    route_band_stop_id:  uuid.UUID
+    arrival_time:        str | None
+    departure_time:      str | None
+    stop_headsign_id:    str | None
+    pickup_type:         int | None
+    drop_off_type:       int | None
+    continuous_pickup:   int | None
+    continuous_drop_off: int | None
+    shape_dist_traveled: float | None
+    timepoint:           int | None
+
+    model_config = {"from_attributes": True}
+
+
+class TripWithStopTimesOut(TripOut):
+    """Trip including all its stop times, returned by the list endpoint."""
+    stop_times: list[EmbeddedStopTimeOut] = []
+
+
 # ---- Endpoints -------------------------------------------------------------
 
 @router.get(
     "/{route_id}/trips",
-    response_model=list[TripOut],
-    summary="List trips for a route (optionally filter by direction)",
+    response_model=list[TripWithStopTimesOut],
+    summary="List trips for a route (optionally filter by direction) including embedded stop times",
     dependencies=[require(Permission.SCHEDULE_READ)],
 )
 async def list_trips(
@@ -860,7 +884,7 @@ async def list_trips(
     direction:   int | None = Query(default=None, description="0 = outbound, 1 = inbound"),
     _:           User          = Depends(get_current_user),
     session:     AsyncSession  = Depends(get_session),
-) -> list[Trip]:
+) -> list[TripWithStopTimesOut]:
     await _get_version_or_404(version_id, session)
     await _get_route_or_404(version_id, route_id, session)
 
@@ -876,7 +900,34 @@ async def list_trips(
     stmt = stmt.order_by(Trip.trip_id)
 
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    trips = list(result.scalars().all())
+
+    # Bulk-load all stop times for the returned trips in a single query.
+    stop_times_by_trip: dict[str, list[StopTime]] = {}
+    if trips:
+        trip_ids = [t.trip_id for t in trips]
+        st_result = await session.execute(
+            select(StopTime)
+            .where(
+                StopTime.version_id == version_id,
+                StopTime.trip_id.in_(trip_ids),
+            )
+            .join(StopTime.route_band_stop)
+            .order_by(RouteBandStop.sort_order)
+        )
+        for st in st_result.scalars().all():
+            stop_times_by_trip.setdefault(st.trip_id, []).append(st)
+
+    return [
+        TripWithStopTimesOut(
+            **TripOut.model_validate(trip).model_dump(),
+            stop_times=[
+                EmbeddedStopTimeOut.model_validate(st)
+                for st in stop_times_by_trip.get(trip.trip_id, [])
+            ],
+        )
+        for trip in trips
+    ]
 
 
 @router.get(
