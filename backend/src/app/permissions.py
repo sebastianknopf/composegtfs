@@ -145,6 +145,15 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
         ],
     ),
     PermissionGroup(
+        key="shapes",
+        lang_key="permissions._groups.shapes",
+        permissions=[
+            PermissionDef("shapes:read",   "permissions.shapes.read"),
+            PermissionDef("shapes:write",  "permissions.shapes.write"),
+            PermissionDef("shapes:delete", "permissions.shapes.delete"),
+        ],
+    ),
+    PermissionGroup(
         key="gtfs",
         lang_key="permissions._groups.gtfs",
         permissions=[
@@ -215,6 +224,11 @@ class Permission(str, Enum):
     ROUTES_READ   = "routes:read"
     ROUTES_WRITE  = "routes:write"
     ROUTES_DELETE = "routes:delete"
+
+    # Shapes / Fahrwege (network area)
+    SHAPES_READ   = "shapes:read"
+    SHAPES_WRITE  = "shapes:write"
+    SHAPES_DELETE = "shapes:delete"
 
     # GTFS Export
     GTFS_EXPORT = "gtfs:export"

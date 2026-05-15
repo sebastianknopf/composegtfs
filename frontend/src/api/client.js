@@ -248,6 +248,13 @@ export const api = {
     deleteDate: (versionId, auxCalendarId, date)   => request('DELETE', `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates/${date}`),
   },
 
+  networkShapes: {
+    list:   (versionId)              => request('GET',   `/versions/${versionId}/network/shapes`),
+    get:    (versionId, shapeId)     => request('GET',   `/versions/${versionId}/network/shapes/${encodeURIComponent(shapeId)}`),
+    update: (versionId, shapeId, data) => request('PATCH', `/versions/${versionId}/network/shapes/${encodeURIComponent(shapeId)}`, data),
+    delete: (versionId, shapeId)     => request('DELETE', `/versions/${versionId}/network/shapes/${encodeURIComponent(shapeId)}`),
+  },
+
   gtfsExport: {
     /**
      * Start a GTFS export and return a ReadableStream of SSE lines.

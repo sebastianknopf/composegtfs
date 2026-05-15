@@ -68,6 +68,7 @@ class CopyIncludes(BaseModel):
     agencies:     bool = False
     day_types:    bool = False
     stops:        bool = False
+    shapes:       bool = False
     routes:       bool = False
     route_bands:  bool = False
     schedule:     bool = False
@@ -277,6 +278,7 @@ async def copy_version(
             include_agencies=body.include.agencies,
             include_day_types=body.include.day_types,
             include_stops=body.include.stops,
+            include_shapes=body.include.shapes,
             include_routes=body.include.routes,
             include_route_bands=body.include.route_bands,
             include_schedule=body.include.schedule,

@@ -51,6 +51,7 @@ const checks = reactive({
   agencies:    false,
   day_types:   false,
   stops:       false,
+  shapes:      false,
   routes:      false,
   route_bands: false,
   schedule:    false,
@@ -69,6 +70,7 @@ const forced = computed(() => {
   if (checks.schedule) {
     f.add('route_bands')
     f.add('day_types')
+    f.add('shapes')
   }
   return f
 })
@@ -169,6 +171,7 @@ async function handleSubmit() {
       agencies:    isChecked('agencies'),
       day_types:   isChecked('day_types'),
       stops:       isChecked('stops'),
+      shapes:      isChecked('shapes'),
       routes:      isChecked('routes'),
       route_bands: isChecked('route_bands'),
       schedule:    isChecked('schedule'),
@@ -334,6 +337,14 @@ async function handleSubmit() {
               @change="toggle('routes', $event.target.checked)"
             />
             <span>{{ t('version_copy.item_routes') }}</span>
+          </label>
+          <label class="version-copy-dialog__check-item">
+            <md-checkbox
+              :checked="isChecked('shapes')"
+              :disabled="isDisabled('shapes')"
+              @change="toggle('shapes', $event.target.checked)"
+            />
+            <span>{{ t('version_copy.item_shapes') }}</span>
           </label>
         </div>
       </div>

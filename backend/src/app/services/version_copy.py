@@ -53,6 +53,7 @@ async def run_copy(
     include_agencies: bool,
     include_day_types: bool,
     include_stops: bool,
+    include_shapes: bool,
     include_routes: bool,
     include_route_bands: bool,
     include_schedule: bool,
@@ -89,6 +90,8 @@ async def run_copy(
                 await _copy_day_types(session, source_version_id, new_vid)
             if include_stops:
                 await _copy_stops(session, source_version_id, new_vid)
+            if include_shapes or include_schedule:
+                await _copy_shapes(session, source_version_id, new_vid)
             if include_routes:
                 await _copy_routes(session, source_version_id, new_vid)
             if include_route_bands:
@@ -130,6 +133,8 @@ async def run_copy(
                 await _merge_day_types(session, source_version_id, new_vid)
             if include_stops:
                 await _merge_stops(session, source_version_id, new_vid)
+            if include_shapes or include_schedule:
+                await _merge_shapes(session, source_version_id, new_vid)
             if include_routes:
                 await _merge_routes(session, source_version_id, new_vid)
             if include_route_bands:
@@ -352,14 +357,12 @@ async def _copy_route_bands(
     return rbs_id_map
 
 
-async def _copy_schedule(
+async def _copy_shapes(
     session: AsyncSession,
     src_vid: uuid.UUID,
     dst_vid: uuid.UUID,
-    rbs_id_map: dict[uuid.UUID, uuid.UUID],
 ) -> None:
-    """Copy shapes, trips, and stop_times."""
-    # Shapes
+    """Copy all shapes from source to destination version."""
     shapes = (
         await session.execute(select(Shape).where(Shape.version_id == src_vid))
     ).scalars().all()
@@ -371,9 +374,42 @@ async def _copy_schedule(
             shape_polyline=s.shape_polyline,
             routed_polyline=s.routed_polyline,
         ))
-
     await session.flush()
 
+
+async def _merge_shapes(
+    session: AsyncSession,
+    src_vid: uuid.UUID,
+    dst_vid: uuid.UUID,
+) -> None:
+    """Copy shapes that do not yet exist in destination version."""
+    existing_shapes = set(
+        (await session.execute(
+            select(Shape.shape_id).where(Shape.version_id == dst_vid)
+        )).scalars().all()
+    )
+    shapes = (
+        await session.execute(select(Shape).where(Shape.version_id == src_vid))
+    ).scalars().all()
+    for s in shapes:
+        if s.shape_id not in existing_shapes:
+            session.add(Shape(
+                version_id=dst_vid,
+                shape_id=s.shape_id,
+                shape_name=s.shape_name,
+                shape_polyline=s.shape_polyline,
+                routed_polyline=s.routed_polyline,
+            ))
+    await session.flush()
+
+
+async def _copy_schedule(
+    session: AsyncSession,
+    src_vid: uuid.UUID,
+    dst_vid: uuid.UUID,
+    rbs_id_map: dict[uuid.UUID, uuid.UUID],
+) -> None:
+    """Copy trips and stop_times."""
     # Trips
     trips = (
         await session.execute(select(Trip).where(Trip.version_id == src_vid))
@@ -827,28 +863,7 @@ async def _merge_schedule(
     dst_vid: uuid.UUID,
     rbs_id_map: dict[uuid.UUID, uuid.UUID],
 ) -> None:
-    """Merge shapes, trips, and stop_times that do not yet exist in target."""
-    # Shapes
-    existing_shapes = set(
-        (await session.execute(
-            select(Shape.shape_id).where(Shape.version_id == dst_vid)
-        )).scalars().all()
-    )
-    shapes = (
-        await session.execute(select(Shape).where(Shape.version_id == src_vid))
-    ).scalars().all()
-    for s in shapes:
-        if s.shape_id not in existing_shapes:
-            session.add(Shape(
-                version_id=dst_vid,
-                shape_id=s.shape_id,
-                shape_name=s.shape_name,
-                shape_polyline=s.shape_polyline,
-                routed_polyline=s.routed_polyline,
-            ))
-
-    await session.flush()
-
+    """Merge trips and stop_times that do not yet exist in target."""
     # Trips
     existing_trips = set(
         (await session.execute(

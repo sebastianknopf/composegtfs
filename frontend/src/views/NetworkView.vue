@@ -13,6 +13,7 @@ import PlatformEditPanel from '@/components/PlatformEditPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import RoutesSideBar from '@/components/RoutesSideBar.vue'
 import RouteEditPanel from '@/components/RouteEditPanel.vue'
+import ShapeEditPanel from '@/components/ShapeEditPanel.vue'
 import { routesStore } from '@/stores/routes.js'
 import '@material/web/icon/icon.js'
 
@@ -24,6 +25,9 @@ const canDelete      = has('stops:delete')
 const canReadRoutes   = has('routes:read')
 const canWriteRoutes  = has('routes:write')
 const canDeleteRoutes = has('routes:delete')
+const canReadShapes   = has('shapes:read')
+const canWriteShapes  = has('shapes:write')
+const canDeleteShapes = has('shapes:delete')
 
 // ---------------------------------------------------------------------------
 // Routes panel state
@@ -49,6 +53,7 @@ async function fetchAgenciesForPanel() {
 async function openCreateRoutePanel() {
   panelVisible.value = false
   platformPanelVisible.value = false
+  shapePanelVisible.value = false
   editingRoute.value      = null
   routePanelError.value   = null
   await fetchAgenciesForPanel()
@@ -58,6 +63,7 @@ async function openCreateRoutePanel() {
 async function openEditRoutePanel(route) {
   panelVisible.value = false
   platformPanelVisible.value = false
+  shapePanelVisible.value = false
   editingRoute.value      = route
   routePanelError.value   = null
   await fetchAgenciesForPanel()
@@ -140,6 +146,10 @@ const PLATFORM_LAYER  = 'platforms-layer'
 const PLATFORM_LABEL  = 'platforms-label-layer'
 const CLUSTER_LAYER   = 'stops-cluster-layer'
 const CLUSTER_COUNT   = 'stops-cluster-count-layer'
+const SHAPE_SOURCE    = 'shapes-source'
+const SHAPE_LAYER     = 'shapes-layer'
+const SHAPE_GLOW      = 'shapes-glow-layer'
+const SHAPE_SELECT    = 'shapes-select-layer'
 
 // ---------------------------------------------------------------------------
 // Stops data
@@ -254,6 +264,97 @@ async function loadPlatformsForStop(stop) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Shapes (Fahrwege) data
+// ---------------------------------------------------------------------------
+const shapesData = ref([])  // all shapes in the version
+
+/**
+ * Decode a Google-encoded polyline string into [[lon, lat], ...] coordinate pairs.
+ */
+function decodePolyline(encoded) {
+  if (!encoded || typeof encoded !== 'string') return []
+  const coords = []
+  let lat = 0
+  let lng = 0
+  let index = 0
+
+  while (index < encoded.length) {
+    let result = 0
+    let shift = 0
+    let char
+
+    do {
+      char = encoded.charCodeAt(index++) - 63
+      result |= (char & 0x1f) << shift
+      shift += 5
+    } while (char >= 0x20)
+
+    lat += result & 1 ? ~(result >> 1) : result >> 1
+
+    result = 0
+    shift = 0
+
+    do {
+      char = encoded.charCodeAt(index++) - 63
+      result |= (char & 0x1f) << shift
+      shift += 5
+    } while (char >= 0x20)
+
+    lng += result & 1 ? ~(result >> 1) : result >> 1
+
+    coords.push([lng / 1e5, lat / 1e5])
+  }
+
+  return coords
+}
+
+function buildShapesGeojson(shapes) {
+  return {
+    type: 'FeatureCollection',
+    features: shapes
+      .map(s => {
+        const polyline = s.routed_polyline || s.shape_polyline
+        const coords = decodePolyline(polyline)
+        if (coords.length < 2) return null
+        return {
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: coords,
+          },
+          properties: {
+            shape_id:   s.shape_id,
+            shape_name: s.shape_name ?? s.shape_id,
+          },
+        }
+      })
+      .filter(Boolean),
+  }
+}
+
+function updateShapeSource(shapes) {
+  if (!map || !map.getSource(SHAPE_SOURCE)) return
+  map.getSource(SHAPE_SOURCE).setData(buildShapesGeojson(shapes))
+}
+
+async function loadShapes() {
+  const versionId = versionsStore.state.activeVersionId
+  if (!versionId || !canReadShapes.value) {
+    shapesData.value = []
+    updateShapeSource([])
+    return
+  }
+  try {
+    const result = await api.networkShapes.list(versionId)
+    shapesData.value = result
+    updateShapeSource(result)
+  } catch {
+    shapesData.value = []
+    updateShapeSource([])
+  }
+}
+
 // Draw a circular "H" badge onto a canvas and return ImageData for MapLibre.
 function createStopMarkerImage() {
   const sz = 64   // rendered at 2x; displayed as 32px logical pixels
@@ -291,6 +392,79 @@ function createStopMarkerImage() {
 // ---------------------------------------------------------------------------
 // Map layer setup
 // ---------------------------------------------------------------------------
+function addShapeLayers() {
+  // Add shapes source (non-clustered LineStrings)
+  if (!map.getSource(SHAPE_SOURCE)) {
+    map.addSource(SHAPE_SOURCE, {
+      type: 'geojson',
+      data: buildShapesGeojson(shapesData.value),
+    })
+  }
+
+  // 1 — Glow layer: wide soft halo, only visible for the selected shape
+  if (!map.getLayer(SHAPE_GLOW)) {
+    map.addLayer(
+      {
+        id: SHAPE_GLOW,
+        type: 'line',
+        source: SHAPE_SOURCE,
+        minzoom: 16,
+        filter: ['==', ['get', 'shape_id'], '__none__'],
+        paint: {
+          'line-color': '#7eb3ff',
+          'line-width': 22,
+          'line-opacity': 0.75,
+          'line-blur': 5,
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      },
+      PLATFORM_GLOW,
+    )
+  }
+
+  // 2 — White casing layer: crisp bright border around selected shape
+  if (!map.getLayer(SHAPE_SELECT)) {
+    map.addLayer(
+      {
+        id: SHAPE_SELECT,
+        type: 'line',
+        source: SHAPE_SOURCE,
+        minzoom: 16,
+        filter: ['==', ['get', 'shape_id'], '__none__'],
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 10,
+          'line-opacity': 0.85,
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      },
+      PLATFORM_GLOW,
+    )
+  }
+
+  // 3 — Shape lines: base layer, rendered at zoom >= 16, behind all stop/platform layers
+  if (!map.getLayer(SHAPE_LAYER)) {
+    map.addLayer(
+      {
+        id: SHAPE_LAYER,
+        type: 'line',
+        source: SHAPE_SOURCE,
+        minzoom: 16,
+        paint: {
+          'line-color': '#1f69e0',
+          'line-width': 5,
+          'line-opacity': 0.75,
+        },
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+      },
+      PLATFORM_GLOW,
+    )
+  }
+}
+
 function addStopLayers() {
   // Register the circular stop marker image (2x for retina)
   if (!map.hasImage('stop-marker')) {
@@ -466,7 +640,7 @@ function addStopLayers() {
 const contextMenu = ref({ visible: false, x: 0, y: 0, lng: 0, lat: 0 })
 
 function showContextMenu(e) {
-  if (!canWrite.value) return
+  if (!canWrite.value && !canWriteShapes.value) return
   contextMenu.value = {
     visible: true,
     x: e.point.x,
@@ -481,6 +655,104 @@ function hideContextMenu() {
 }
 
 // ---------------------------------------------------------------------------
+// Shape picker menu (disambiguation when multiple shapes overlap a click)
+// ---------------------------------------------------------------------------
+const shapePickerMenu = ref({ visible: false, x: 0, y: 0, shapes: [] })
+
+function hideShapePickerMenu() {
+  shapePickerMenu.value.visible = false
+}
+
+// ---------------------------------------------------------------------------
+// Shape edit panel
+// ---------------------------------------------------------------------------
+const shapePanelVisible = ref(false)
+const editingShape      = ref(null)
+const shapePanelLoading = ref(false)
+const shapePanelError   = ref(null)
+
+function openShapePanel(shape) {
+  // Master-level: close all other level-1 panels first
+  routePanelVisible.value = false
+  panelVisible.value = false
+  platformParentStop.value = null
+  platformPanelVisible.value = false
+  hideShapePickerMenu()
+
+  editingShape.value      = shape
+  shapePanelError.value   = null
+  shapePanelVisible.value = true
+
+  // Highlight the selected shape on the map
+  if (map) {
+    if (map.getLayer(SHAPE_GLOW))   map.setFilter(SHAPE_GLOW,   ['==', ['get', 'shape_id'], shape.shape_id])
+    if (map.getLayer(SHAPE_SELECT)) map.setFilter(SHAPE_SELECT, ['==', ['get', 'shape_id'], shape.shape_id])
+  }
+}
+
+watch(shapePanelVisible, (visible) => {
+  if (!visible && map) {
+    if (map.getLayer(SHAPE_GLOW))   map.setFilter(SHAPE_GLOW,   ['==', ['get', 'shape_id'], '__none__'])
+    if (map.getLayer(SHAPE_SELECT)) map.setFilter(SHAPE_SELECT, ['==', ['get', 'shape_id'], '__none__'])
+  }
+})
+
+async function handleShapeSave(data) {
+  if (!canWriteShapes.value) return
+  const versionId = versionsStore.state.activeVersionId
+  if (!versionId || !editingShape.value) return
+  shapePanelLoading.value = true
+  shapePanelError.value   = null
+  try {
+    const updated = await api.networkShapes.update(versionId, editingShape.value.shape_id, data)
+    // Update local data
+    const idx = shapesData.value.findIndex(s => s.shape_id === updated.shape_id)
+    if (idx !== -1) shapesData.value[idx] = updated
+    editingShape.value = updated
+    shapePanelVisible.value = false
+    updateShapeSource(shapesData.value)
+  } catch (err) {
+    if (err?.status === 404) {
+      shapePanelError.value = t('shapes.error_not_found')
+    } else {
+      shapePanelError.value = t('shapes.error_generic')
+    }
+  } finally {
+    shapePanelLoading.value = false
+  }
+}
+
+const shapeConfirmOpen    = ref(false)
+const shapeConfirmTitle   = ref('')
+const shapeConfirmMessage = ref('')
+
+function handleShapeDeleteRequest() {
+  if (!editingShape.value) return
+  shapeConfirmTitle.value   = t('shapes.delete_confirm_title')
+  shapeConfirmMessage.value = t('shapes.delete_confirm_message', {
+    name: editingShape.value.shape_name || editingShape.value.shape_id,
+  })
+  shapeConfirmOpen.value = true
+}
+
+async function handleShapeDeleteConfirmed() {
+  if (!canDeleteShapes.value) return
+  const versionId = versionsStore.state.activeVersionId
+  if (!versionId || !editingShape.value) return
+  shapePanelLoading.value = true
+  shapePanelError.value   = null
+  try {
+    await api.networkShapes.delete(versionId, editingShape.value.shape_id)
+    shapePanelVisible.value = false
+    await loadShapes()
+  } catch {
+    shapePanelError.value = t('shapes.error_generic')
+  } finally {
+    shapePanelLoading.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Edit panel
 // ---------------------------------------------------------------------------
 const panelVisible = ref(false)
@@ -492,6 +764,7 @@ const panelError   = ref(null)
 
 function openCreatePanel(lat, lon) {
   routePanelVisible.value = false
+  shapePanelVisible.value = false
   editingStop.value  = null
   initLat.value      = lat
   initLon.value      = lon
@@ -501,6 +774,7 @@ function openCreatePanel(lat, lon) {
 
 function openEditPanel(stop, { zoom = true } = {}) {
   routePanelVisible.value = false
+  shapePanelVisible.value = false
   editingStop.value  = stop
   panelError.value   = null
   panelVisible.value = true
@@ -848,6 +1122,102 @@ function attachMarkerInteraction() {
   map.on('mouseleave', PLATFORM_LAYER, () => {
     if (!draggingStop && !draggingPlatform && !addingPlatform.value) map.getCanvas().style.cursor = ''
   })
+
+  // --- Shape click: open edit panel or disambiguation menu ---
+  map.on('click', SHAPE_LAYER, (e) => {
+    if (addingPlatform.value) return
+    hideContextMenu()
+    hideShapePickerMenu()
+
+    const features = map.queryRenderedFeatures(e.point, { layers: [SHAPE_LAYER] })
+    if (!features.length) return
+
+    // Deduplicate by shape_id (a shape might render multiple tile features)
+    const seen = new Set()
+    const unique = features.filter(f => {
+      const id = f.properties?.shape_id
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+
+    if (unique.length === 1) {
+      const shape = shapesData.value.find(s => s.shape_id === unique[0].properties.shape_id)
+      if (shape) openShapePanel(shape)
+    } else {
+      // Multiple overlapping shapes — show picker menu
+      const shapes = unique
+        .map(f => shapesData.value.find(s => s.shape_id === f.properties.shape_id))
+        .filter(Boolean)
+      shapePickerMenu.value = {
+        visible: true,
+        x: e.point.x,
+        y: e.point.y,
+        shapes,
+      }
+    }
+  })
+
+  map.on('mouseenter', SHAPE_LAYER, () => {
+    if (!draggingStop && !draggingPlatform && !addingPlatform.value) {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+  })
+  map.on('mouseleave', SHAPE_LAYER, () => {
+    if (!draggingStop && !draggingPlatform && !addingPlatform.value) map.getCanvas().style.cursor = ''
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Stop search
+// ---------------------------------------------------------------------------
+const searchQuery = ref('')
+const searchOpen  = ref(false)
+
+const searchResults = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return []
+  const results = []
+  if (canRead.value) {
+    for (const s of stopsData.value) {
+      if (s.stop_name?.toLowerCase().includes(q) || s.stop_id?.toLowerCase().includes(q)) {
+        results.push({ type: 'stop', data: s })
+      }
+    }
+  }
+  if (canReadShapes.value) {
+    for (const s of shapesData.value) {
+      if (s.shape_name?.toLowerCase().includes(q) || s.shape_id?.toLowerCase().includes(q)) {
+        results.push({ type: 'shape', data: s })
+      }
+    }
+  }
+  return results.slice(0, 8)
+})
+
+function flyToResult(result) {
+  if (result.type === 'stop') {
+    flyToStop(result.data)
+  } else {
+    flyToShape(result.data)
+  }
+}
+
+function flyToStop(stop) {
+  if (!map || stop.stop_lat == null || stop.stop_lon == null) return
+  map.flyTo({ center: [stop.stop_lon, stop.stop_lat], zoom: 16 })
+  searchQuery.value = ''
+  searchOpen.value  = false
+}
+
+function flyToShape(shape) {
+  const polyline = shape.routed_polyline || shape.shape_polyline
+  const coords = decodePolyline(polyline)
+  if (!map || coords.length === 0) return
+  const mid = coords[Math.floor(coords.length / 2)]
+  map.flyTo({ center: mid, zoom: 16 })
+  searchQuery.value = ''
+  searchOpen.value  = false
 }
 
 // ---------------------------------------------------------------------------
@@ -870,8 +1240,10 @@ onMounted(async () => {
 
   map.on('load', () => {
     addStopLayers()
+    addShapeLayers()
     attachMarkerInteraction()
     loadStops()
+    loadShapes()
     if (canReadRoutes.value) {
       routesStore.load(versionsStore.state.activeVersionId)
     }
@@ -884,6 +1256,7 @@ onMounted(async () => {
 
   map.on('click', (e) => {
     hideContextMenu()
+    hideShapePickerMenu()
     if (addingPlatform.value) {
       addingPlatform.value = false
       if (map) map.getCanvas().style.cursor = ''
@@ -893,6 +1266,7 @@ onMounted(async () => {
 
   map.on('dragstart', () => {
     hideContextMenu()
+    hideShapePickerMenu()
   })
 })
 
@@ -912,9 +1286,10 @@ onBeforeUnmount(() => {
   map = null
 })
 
-// Reload stops when the active version changes
+// Reload stops and shapes when the active version changes
 watch(() => versionsStore.state.activeVersionId, () => {
   loadStops()
+  loadShapes()
   if (canReadRoutes.value) {
     routesStore.load(versionsStore.state.activeVersionId)
   } else {
@@ -938,7 +1313,53 @@ watch(() => versionsStore.state.activeVersionId, () => {
     />
 
     <!-- Map container fills remaining space -->
-    <div ref="mapContainer" class="network-map" />
+    <div class="map-area">
+      <div ref="mapContainer" class="network-map" />
+
+      <!-- Stop/shape search overlay -->
+      <div v-if="canRead || canReadShapes" class="map-search">
+        <div class="map-search__box">
+          <md-icon class="map-search__icon">search</md-icon>
+          <input
+            class="map-search__input"
+            type="text"
+            :placeholder="t('stops.search_placeholder')"
+            v-model="searchQuery"
+            autocomplete="off"
+            @focus="searchOpen = true"
+            @blur="searchOpen = false"
+          />
+          <button
+            v-if="searchQuery"
+            class="map-search__clear"
+            @mousedown.prevent
+            @click="searchQuery = ''"
+            :aria-label="t('stops.cancel')"
+          >
+            <md-icon>close</md-icon>
+          </button>
+        </div>
+        <ul v-if="searchOpen && searchResults.length > 0" class="map-search__results">
+          <li v-for="result in searchResults" :key="result.type + '_' + (result.data.stop_id || result.data.shape_id)">
+            <button class="map-search__item" @mousedown.prevent="flyToResult(result)">
+              <template v-if="result.type === 'stop'">
+                <span class="map-search__item-name">{{ result.data.stop_name || result.data.stop_id }}</span>
+                <span class="map-search__item-id">{{ result.data.stop_id }}</span>
+              </template>
+              <template v-else>
+                <span class="map-search__item-name">{{ result.data.shape_name || result.data.shape_id }}</span>
+              </template>
+            </button>
+          </li>
+        </ul>
+        <div
+          v-else-if="searchOpen && searchQuery.trim() && searchResults.length === 0"
+          class="map-search__empty"
+        >
+          {{ t('stops.search_no_results') }}
+        </div>
+      </div>
+    </div>
 
     <!-- Right-click context menu -->
     <Transition name="ctx-menu">
@@ -948,9 +1369,13 @@ watch(() => versionsStore.state.activeVersionId, () => {
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         @click.stop
       >
-        <button class="ctx-menu__item" @click="openCreatePanel(contextMenu.lat, contextMenu.lng); hideContextMenu()">
+        <button v-if="canWrite" class="ctx-menu__item" @click="openCreatePanel(contextMenu.lat, contextMenu.lng); hideContextMenu()">
           <span class="ctx-menu__icon">H</span>
           {{ t('stops.context_add_stop') }}
+        </button>
+        <button v-if="canWriteShapes" class="ctx-menu__item" @click="hideContextMenu()">
+          <md-icon class="ctx-menu__line-icon">route</md-icon>
+          {{ t('stops.context_add_shape') }}
         </button>
       </div>
     </Transition>
@@ -1019,6 +1444,40 @@ watch(() => versionsStore.state.activeVersionId, () => {
       @delete="handleRouteDeleteRequest"
     />
 
+    <!-- Shape (Fahrweg) edit panel -->
+    <ShapeEditPanel
+      v-model="shapePanelVisible"
+      :shape="editingShape"
+      :loading="shapePanelLoading"
+      :server-error="shapePanelError"
+      :can-write="canWriteShapes"
+      :can-delete="canDeleteShapes"
+      :readonly="!canWriteShapes"
+      @save="handleShapeSave"
+      @delete="handleShapeDeleteRequest"
+    />
+
+    <!-- Shape picker context menu (disambiguation when multiple shapes overlap) -->
+    <Transition name="ctx-menu">
+      <div
+        v-if="shapePickerMenu.visible"
+        class="ctx-menu shape-picker-menu"
+        :style="{ left: shapePickerMenu.x + 'px', top: shapePickerMenu.y + 'px' }"
+        @click.stop
+      >
+        <div class="ctx-menu__header">{{ t('shapes.picker_title') }}</div>
+        <button
+          v-for="shape in shapePickerMenu.shapes"
+          :key="shape.shape_id"
+          class="ctx-menu__item"
+          @click="openShapePanel(shape)"
+        >
+          <md-icon class="ctx-menu__line-icon">route</md-icon>
+          {{ shape.shape_name || shape.shape_id }}
+        </button>
+      </div>
+    </Transition>
+
     <!-- Delete confirm: route -->
     <ConfirmDialog
       v-model="routeConfirmOpen"
@@ -1028,6 +1487,17 @@ watch(() => versionsStore.state.activeVersionId, () => {
       :cancel-label="t('routes.cancel')"
       :danger="true"
       @confirm="handleRouteDeleteConfirmed"
+    />
+
+    <!-- Delete confirm: shape -->
+    <ConfirmDialog
+      v-model="shapeConfirmOpen"
+      :title="shapeConfirmTitle"
+      :message="shapeConfirmMessage"
+      :confirm-label="t('shapes.delete')"
+      :cancel-label="t('shapes.cancel')"
+      :danger="true"
+      @confirm="handleShapeDeleteConfirmed"
     />
 
     <!-- Delete confirm: platform -->
@@ -1054,9 +1524,122 @@ watch(() => versionsStore.state.activeVersionId, () => {
 }
 
 .network-map {
+  width: 100%;
+  height: 100%;
+}
+
+.map-area {
   flex: 1;
   min-width: 0;
   height: 100%;
+  position: relative;
+}
+
+/* ---- Stop search overlay ---- */
+.map-search {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 320px;
+  max-width: calc(100% - 32px);
+  z-index: 10;
+  pointer-events: all;
+}
+
+.map-search__box {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: var(--shadow-4, 0 4px 16px rgba(0,0,0,.22));
+  padding: 0 12px;
+  height: 48px;
+  gap: 8px;
+}
+
+.map-search__icon {
+  color: var(--md-sys-color-outline, #74777f);
+  flex-shrink: 0;
+}
+
+.map-search__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: var(--font-size-1, 0.875rem);
+  background: transparent;
+  color: var(--md-sys-color-on-surface, #222);
+}
+
+.map-search__input::placeholder {
+  color: var(--md-sys-color-outline, #74777f);
+}
+
+.map-search__clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  color: var(--md-sys-color-outline, #74777f);
+}
+.map-search__clear:hover {
+  color: var(--md-sys-color-on-surface, #222);
+}
+
+.map-search__results {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px 0;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: var(--shadow-4, 0 4px 16px rgba(0,0,0,.22));
+  overflow: hidden;
+}
+
+.map-search__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 12px;
+  transition: background 0.1s;
+}
+.map-search__item:hover {
+  background: #ddf0fb;
+}
+
+.map-search__item-name {
+  font-size: var(--font-size-1, 0.875rem);
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface, #222);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.map-search__item-id {
+  font-size: var(--font-size-0, 0.78rem);
+  color: var(--md-sys-color-outline, #74777f);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.map-search__empty {
+  margin-top: 6px;
+  padding: 12px 16px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: var(--shadow-3, 0 2px 8px rgba(0,0,0,.15));
+  font-size: var(--font-size-1, 0.875rem);
+  color: var(--md-sys-color-outline, #74777f);
 }
 
 /* ---- Crosshair placement hint ---- */
@@ -1123,6 +1706,25 @@ watch(() => versionsStore.state.activeVersionId, () => {
   justify-content: center;
   flex-shrink: 0;
   line-height: 1;
+}
+
+/* Shape picker menu header */
+.ctx-menu__header {
+  padding: 6px 16px 4px;
+  font-size: var(--font-size-0, 0.75rem);
+  font-weight: 600;
+  color: var(--md-sys-color-outline, #74777f);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
+  margin-bottom: 2px;
+}
+
+/* Inline icon for shape picker items */
+.ctx-menu__line-icon {
+  font-size: 18px;
+  color: #1f69e0;
+  flex-shrink: 0;
 }
 
 /* Transition */
