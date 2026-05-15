@@ -90,8 +90,10 @@ const visibleSections = computed(() =>
   })
 )
 
-// Derive the active section from the current route meta
-const activeSection = computed(() => route.meta?.section ?? sections[0]?.id ?? null)
+// Derive the active section from the current route meta.
+// Routes without a section meta (e.g. /versions) return null so no section
+// tab stays highlighted in the TopBar.
+const activeSection = computed(() => route.meta?.section ?? null)
 
 // Derive the active view from the current route name
 const activeView = computed(() => route.name ?? null)

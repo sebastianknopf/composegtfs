@@ -8,7 +8,8 @@
  *
  * Emits:
  *   update:modelValue
- *   done(newVersion)  — emitted after successful copy
+ *   done(version)  — emitted after successful copy/merge; version is the
+ *                    newly created or the updated target version object
  */
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -17,9 +18,12 @@ import '@material/web/dialog/dialog.js'
 import '@material/web/button/text-button.js'
 import '@material/web/button/filled-button.js'
 import '@material/web/textfield/outlined-text-field.js'
+import '@material/web/select/outlined-select.js'
+import '@material/web/select/select-option.js'
 import '@material/web/checkbox/checkbox.js'
 import '@material/web/icon/icon.js'
 import '@material/web/progress/circular-progress.js'
+import { api } from '@/api/client.js'
 
 const { t } = useI18n()
 
@@ -31,6 +35,13 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'done'])
 
 const dialogRef = ref(null)
+
+// ---- Target version selection ----
+// ''          → nothing selected yet (placeholder shown)
+// 'new'       → create a brand-new version (name field is shown)
+// <uuid>      → merge into the existing version with that id
+const targetMode        = ref('')
+const availableVersions = ref([])   // sorted versions excluding source
 
 // ---- Form state ----
 const name      = ref('')
@@ -46,7 +57,6 @@ const checks = reactive({
 })
 
 // ---- Dependency logic ----
-// forced = set of keys that are auto-selected because of another selection.
 const forced = computed(() => {
   const f = new Set()
   if (checks.routes || checks.route_bands || checks.schedule) {
@@ -88,14 +98,32 @@ const schema = z.object({
 })
 
 // ---- Dialog lifecycle ----
-watch(() => props.modelValue, (val) => {
+watch(() => props.modelValue, async (val) => {
   const el = dialogRef.value
   if (val) {
-    name.value      = ''
-    nameError.value = null
-    copyError.value = null
-    isCopying.value = false
+    name.value            = ''
+    nameError.value       = null
+    copyError.value       = null
+    isCopying.value       = false
+    targetMode.value      = ''  // reset to placeholder
+    availableVersions.value = []
     Object.keys(checks).forEach(k => { checks[k] = false })
+
+    // Load available target versions (all versions except the source)
+    try {
+      const all = await api.versions.list()
+      availableVersions.value = all
+        .filter(v => v.id !== props.version?.id)
+        .sort((a, b) => {
+          const ao = a.sort_order ?? Infinity
+          const bo = b.sort_order ?? Infinity
+          if (ao !== bo) return ao - bo
+          return a.name.localeCompare(b.name)
+        })
+    } catch {
+      // non-critical — user can still create a new version
+    }
+
     requestAnimationFrame(() => el?.show?.())
   } else {
     el?.close?.()
@@ -103,13 +131,18 @@ watch(() => props.modelValue, (val) => {
 })
 
 function handleClose() {
-  if (isCopying.value) return   // prevent closing while copying
+  if (isCopying.value) return
   emit('update:modelValue', false)
 }
 
 // ---- Validation ----
 function validate() {
   nameError.value = null
+  if (targetMode.value === '') {
+    copyError.value = t('version_copy.error_no_target')
+    return false
+  }
+  if (targetMode.value !== 'new') return true   // no name needed for merge
   const result = schema.safeParse({ name: name.value.trim() })
   if (!result.success) {
     const issues = result.error.flatten().fieldErrors
@@ -127,8 +160,11 @@ async function handleSubmit() {
   isCopying.value = true
 
   const token = localStorage.getItem('access_token')
+  const isNewVersion = targetMode.value === 'new'
   const payload = {
-    name: name.value.trim(),
+    ...(isNewVersion
+      ? { name: name.value.trim() }
+      : { target_version_id: targetMode.value }),
     include: {
       agencies:    isChecked('agencies'),
       day_types:   isChecked('day_types'),
@@ -176,7 +212,7 @@ async function handleSubmit() {
           if (event.status === 'done') {
             isCopying.value = false
             emit('update:modelValue', false)
-            emit('done', event.version)
+            emit('done', event.version, isNewVersion)
             return
           }
           if (event.status === 'error') {
@@ -212,8 +248,34 @@ async function handleSubmit() {
 
     <form slot="content" class="version-copy-dialog__form" method="dialog">
 
-      <!-- Name -->
+      <!-- Target version selection -->
       <div class="version-copy-dialog__section">
+        <p class="version-copy-dialog__section-label">{{ t('version_copy.section_target') }}</p>
+        <md-outlined-select
+          class="version-copy-dialog__field"
+          :label="t('version_copy.target_label')"
+          :disabled="isCopying"
+          @change="targetMode = $event.target.value; copyError = null"
+        >
+          <md-select-option value="" :selected="targetMode === ''" disabled>
+            <div slot="headline">{{ t('version_copy.target_placeholder') }}</div>
+          </md-select-option>
+          <md-select-option value="new" :selected="targetMode === 'new'">
+            <div slot="headline">{{ t('version_copy.target_new_option') }}</div>
+          </md-select-option>
+          <md-select-option
+            v-for="v in availableVersions"
+            :key="v.id"
+            :value="v.id"
+            :selected="targetMode === v.id"
+          >
+            <div slot="headline">{{ v.name }}</div>
+          </md-select-option>
+        </md-outlined-select>
+      </div>
+
+      <!-- Name (only when creating a new version) -->
+      <div v-if="targetMode === 'new'" class="version-copy-dialog__section">
         <p class="version-copy-dialog__section-label">{{ t('version_copy.section_name') }}</p>
         <md-outlined-text-field
           class="version-copy-dialog__field"

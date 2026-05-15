@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,18 +74,28 @@ class CopyIncludes(BaseModel):
 
 
 class VersionCopyRequest(BaseModel):
-    name: str
+    """Either *name* (create new version) or *target_version_id* (merge into
+    existing) must be supplied — but not both."""
+    name: str | None = None
+    target_version_id: uuid.UUID | None = None
     include: CopyIncludes
 
-    @field_validator("name")
-    @classmethod
-    def name_not_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("name must not be empty")
-        if len(v) > 128:
-            raise ValueError("name must not exceed 128 characters")
-        return v
+    @model_validator(mode="after")
+    def validate_target(self) -> "VersionCopyRequest":
+        has_name   = self.name is not None
+        has_target = self.target_version_id is not None
+        if not has_name and not has_target:
+            raise ValueError("Either 'name' or 'target_version_id' must be provided")
+        if has_name and has_target:
+            raise ValueError("Provide only one of 'name' or 'target_version_id'")
+        if has_name:
+            name = self.name.strip()  # type: ignore[union-attr]
+            if not name:
+                raise ValueError("name must not be empty")
+            if len(name) > 128:
+                raise ValueError("name must not exceed 128 characters")
+            self.name = name
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -246,10 +256,24 @@ async def copy_version(
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
 
+    if body.target_version_id is not None:
+        if body.target_version_id == version_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot copy a version into itself.",
+            )
+        target = await session.get(Version, body.target_version_id)
+        if target is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Target version not found.",
+            )
+
     async def _generate():
         async for event in run_copy(
             source_version_id=version_id,
             new_name=body.name,
+            target_version_id=body.target_version_id,
             include_agencies=body.include.agencies,
             include_day_types=body.include.day_types,
             include_stops=body.include.stops,
