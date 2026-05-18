@@ -53,6 +53,7 @@ from app.models import (
     Route,
     RouteBandStop,
     Shape,
+    ShapeIntermediatePoint,
     Stop,
     StopTime,
     Trip,
@@ -133,25 +134,41 @@ def _project_stop_on_shape(
     slon: float,
     shape_pts: list[tuple[float, float]],
     cum_dists: list[float],
+    min_dist: float = 0.0,
 ) -> float:
-    """Projects a stop position (lat/lon) onto the nearest segment of the route path
-    and returns the cumulative distance along the shape in metres."""
+    """Projects a stop position (lat/lon) onto the nearest shape segment at or after
+    *min_dist* (metres) and returns the cumulative distance along the shape.
+
+    *min_dist* keeps the result monotonically non-decreasing across a trip's stop
+    sequence, which is required for circular routes where the same stop appears
+    more than once.
+    """
     if len(shape_pts) == 1:
-        return 0.0
-    best_dist_sq = math.inf
-    best_shape_dist = 0.0
+        return max(0.0, min_dist)
+    # Locate the last segment whose start is still <= min_dist so that we also
+    # consider the segment that straddles min_dist.
+    start_idx = 0
     for i in range(len(shape_pts) - 1):
+        if cum_dists[i] <= min_dist:
+            start_idx = i
+        else:
+            break
+    best_dist_sq = math.inf
+    best_shape_dist = min_dist  # fallback: maintain monotonicity
+    for i in range(start_idx, len(shape_pts) - 1):
         ax, ay = shape_pts[i][1], shape_pts[i][0]        # (lon, lat)
         bx, by = shape_pts[i + 1][1], shape_pts[i + 1][0]
         px, py = slon, slat
         dx, dy = bx - ax, by - ay
         len_sq = dx * dx + dy * dy
         t = 0.0 if len_sq == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / len_sq))
+        proj = cum_dists[i] + t * (cum_dists[i + 1] - cum_dists[i])
+        proj = max(proj, min_dist)  # clamp straddling segment to min_dist
         cx, cy = ax + t * dx, ay + t * dy
         dist_sq = (px - cx) ** 2 + (py - cy) ** 2
         if dist_sq < best_dist_sq:
             best_dist_sq = dist_sq
-            best_shape_dist = cum_dists[i] + t * (cum_dists[i + 1] - cum_dists[i])
+            best_shape_dist = proj
     return best_shape_dist
 
 
@@ -292,6 +309,7 @@ async def run_export(
     date_to: date,
     session: AsyncSession,
     export_all_stops: bool = False,
+    export_shapes: bool = True,
 ) -> AsyncGenerator[ExportEvent, None]:
     """Async generator: incrementally builds the GTFS feed and yields structured log events.
 
@@ -408,6 +426,37 @@ async def run_export(
     stops = stops_q.scalars().all()
     stops_by_id: dict[str, Stop] = {s.stop_id: s for s in stops}
 
+    # Shape intermediate points — used as fallback when a shape has no usable polyline.
+    # Grouped by shape_id, ordered by sort_order (the DB query guarantees this).
+    sip_by_shape: dict[str, list[ShapeIntermediatePoint]] = defaultdict(list)
+    if shape_ids_set:
+        sip_q = await session.execute(
+            select(ShapeIntermediatePoint)
+            .where(
+                ShapeIntermediatePoint.version_id == version_id,
+                ShapeIntermediatePoint.shape_id.in_(shape_ids_set),
+            )
+            .order_by(ShapeIntermediatePoint.shape_id, ShapeIntermediatePoint.sort_order)
+        )
+        for pt in sip_q.scalars().all():
+            sip_by_shape[pt.shape_id].append(pt)
+
+    # Fill in shape_data for shapes that had no usable polyline, building the
+    # coordinate sequence from their intermediate points instead.
+    for sh in shapes:
+        if sh.shape_id in shape_data:
+            continue
+        coords: list[tuple[float, float]] = []
+        for ipt in sip_by_shape.get(sh.shape_id, []):
+            if ipt.stop_id:
+                stop = stops_by_id.get(ipt.stop_id)
+                if stop and stop.stop_lat is not None and stop.stop_lon is not None:
+                    coords.append((stop.stop_lat, stop.stop_lon))
+            elif ipt.lat is not None and ipt.lon is not None:
+                coords.append((ipt.lat, ipt.lon))
+        if len(coords) >= 2:
+            shape_data[sh.shape_id] = (coords, _cumulative_distances_m(coords))
+
     # All route band entries for the selected routes (for pruning + stop_times)
     all_rbs_q = await session.execute(
         select(RouteBandStop)
@@ -494,10 +543,13 @@ async def run_export(
         yield evt
         validation_errors.append(evt)
 
-    # Warn about trips without an assigned route path
-    for t in trips:
-        if not t.shape_id:
-            yield _log("MiddlePrio", "trip_no_shape", {"trip_id": t.trip_id})
+    # Warn about trips without an assigned route path (only relevant when shapes are exported)
+    if export_shapes:
+        for t in trips:
+            if not t.shape_id:
+                yield _log("MiddlePrio", "trip_no_shape", {"trip_id": t.trip_id})
+            elif t.geo_pattern_hash and t.geo_pattern_hash != t.shape_id:
+                yield _log("MiddlePrio", "trip_shape_mismatch", {"trip_id": t.trip_id})
 
     yield _log("Info", "trips_found", {"count": len(trips)})
 
@@ -599,18 +651,19 @@ async def run_export(
                 "shape_pt_sequence", "shape_dist_traveled",
             ])
             shape_pts_count = 0
-            for sh in shapes:
-                if sh.shape_id not in shape_data:
-                    continue
-                pts, cum = shape_data[sh.shape_id]
-                for seq, ((plat, plon), dist) in enumerate(zip(pts, cum), start=1):
-                    w.writerow([
-                        sh.shape_id,
-                        f"{plat:.6f}", f"{plon:.6f}",
-                        seq,
-                        f"{dist:.2f}",
-                    ])
-                    shape_pts_count += 1
+            if export_shapes:
+                for sh in shapes:
+                    if sh.shape_id not in shape_data:
+                        continue
+                    pts, cum = shape_data[sh.shape_id]
+                    for seq, ((plat, plon), dist) in enumerate(zip(pts, cum), start=1):
+                        w.writerow([
+                            sh.shape_id,
+                            f"{plat:.6f}", f"{plon:.6f}",
+                            seq,
+                            f"{dist:.2f}",
+                        ])
+                        shape_pts_count += 1
             zf.writestr("shapes.txt", buf.getvalue())
 
             # ── trips.txt ────────────────────────────────────────────
@@ -628,7 +681,7 @@ async def run_export(
                     t.trip_short_name or "",
                     "" if t.direction_id is None else str(t.direction_id),
                     t.block_id or "",
-                    t.shape_id or "",
+                    (t.shape_id or "") if export_shapes else "",
                     "" if t.wheelchair_accessible is None else str(t.wheelchair_accessible),
                     "" if t.bikes_allowed is None else str(t.bikes_allowed),
                 ])
@@ -677,24 +730,32 @@ async def run_export(
             st_count = 0
             _seq_trip_id: str | None = None
             _seq_counter: int = 0
+            _prev_shape_dist: float = 0.0  # monotone lower bound per trip
             for row in st_rows:
                 st: StopTime = row[0]
                 rbs: RouteBandStop = row[1]
                 if st.trip_id != _seq_trip_id:
                     _seq_trip_id = st.trip_id
                     _seq_counter = 0
+                    _prev_shape_dist = 0.0
                 _seq_counter += 1
 
                 trip = trips_by_id.get(st.trip_id)
-                if trip and trip.shape_id and trip.shape_id in shape_data:
+                if export_shapes and trip and trip.shape_id and trip.shape_id in shape_data:
                     stop = stops_by_id.get(rbs.stop_id)
                     if stop and stop.stop_lat is not None and stop.stop_lon is not None:
                         pts, cum = shape_data[trip.shape_id]
-                        sdt_str = f"{_project_stop_on_shape(stop.stop_lat, stop.stop_lon, pts, cum):.2f}"
+                        sdt = _project_stop_on_shape(
+                            stop.stop_lat, stop.stop_lon, pts, cum, _prev_shape_dist
+                        )
+                        _prev_shape_dist = sdt
+                        sdt_str = f"{sdt:.2f}"
                     else:
                         sdt_str = f"{st.shape_dist_traveled:.2f}" if st.shape_dist_traveled is not None else ""
                 else:
-                    sdt_str = f"{st.shape_dist_traveled:.2f}" if st.shape_dist_traveled is not None else ""
+                    sdt_str = "" if not export_shapes else (
+                        f"{st.shape_dist_traveled:.2f}" if st.shape_dist_traveled is not None else ""
+                    )
 
                 dep = _format_gtfs_time(st.departure_time)
                 arr = _format_gtfs_time(st.arrival_time) or dep  # GTFS: arrival must not be empty

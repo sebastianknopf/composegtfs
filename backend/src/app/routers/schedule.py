@@ -561,49 +561,9 @@ class ShapeOut(BaseModel):
     shape_name:      str | None
     shape_polyline:  str
     routed_polyline: str | None
+    route_type:      int | None
 
     model_config = {"from_attributes": True}
-
-
-class ShapeCreate(BaseModel):
-    shape_id:        str
-    shape_name:      str | None = None
-    shape_polyline:  str
-    routed_polyline: str | None = None
-    apply_to_pattern: bool = False
-    pattern_hash:    str | None = None
-
-    @field_validator("shape_id")
-    @classmethod
-    def validate_shape_id(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("shape_id must not be empty")
-        return v
-
-    @field_validator("shape_polyline")
-    @classmethod
-    def validate_shape_polyline(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("shape_polyline must not be empty")
-        return v
-
-
-class ShapeUpdate(BaseModel):
-    shape_name:      str | None = None
-    shape_polyline:  str
-    routed_polyline: str | None = None
-    apply_to_pattern: bool = False
-    pattern_hash:    str | None = None
-
-    @field_validator("shape_polyline")
-    @classmethod
-    def validate_shape_polyline(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("shape_polyline must not be empty")
-        return v
 
 
 @router.get(
@@ -616,6 +576,7 @@ async def search_shapes(
     version_id: uuid.UUID,
     q: str | None = Query(default=None, description="Search by shape_id or shape_name"),
     limit: int = Query(default=50, ge=1, le=500),
+    route_type: int | None = Query(default=None, description="Filter by shape route_type"),
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[Shape]:
@@ -631,136 +592,12 @@ async def search_shapes(
                 Shape.shape_name.ilike(like),
             )
         )
+    if route_type is not None:
+        stmt = stmt.where(Shape.route_type == route_type)
 
     stmt = stmt.order_by(Shape.shape_name.nulls_last(), Shape.shape_id).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
-
-
-@router.post(
-    "/shapes",
-    response_model=ShapeOut,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a shape",
-    dependencies=[require(Permission.SCHEDULE_WRITE)],
-)
-async def create_shape(
-    version_id: uuid.UUID,
-    body: ShapeCreate,
-    _: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Shape:
-    await _get_version_or_404(version_id, session)
-
-    existing = await session.execute(
-        select(Shape).where(Shape.version_id == version_id, Shape.shape_id == body.shape_id)
-    )
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A shape with this shape_id already exists in this version",
-        )
-
-    shape = Shape(
-        version_id=version_id,
-        shape_id=body.shape_id,
-        shape_name=(body.shape_name.strip() if body.shape_name is not None else None),
-        shape_polyline=body.shape_polyline,
-        routed_polyline=body.routed_polyline,
-    )
-    session.add(shape)
-    await session.commit()
-    await session.refresh(shape)
-
-    # Apply shape to all trips with matching pattern if requested
-    if body.apply_to_pattern and body.pattern_hash:
-        await session.execute(
-            update(Trip).where(
-                Trip.version_id == version_id,
-                Trip.geo_pattern_hash == body.pattern_hash,
-                Trip.shape_id.is_(None),
-            ).values(shape_id=body.shape_id)
-        )
-        await session.commit()
-
-    return shape
-
-
-@router.get(
-    "/shapes/{shape_id}",
-    response_model=ShapeOut,
-    summary="Get a shape by ID",
-    dependencies=[require(Permission.SCHEDULE_READ)],
-)
-async def get_shape(
-    version_id: uuid.UUID,
-    shape_id: str,
-    _: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Shape:
-    await _get_version_or_404(version_id, session)
-    return await _get_shape_or_404(version_id, shape_id, session)
-
-
-@router.put(
-    "/shapes/{shape_id}",
-    response_model=ShapeOut,
-    summary="Update a shape",
-    dependencies=[require(Permission.SCHEDULE_WRITE)],
-)
-async def update_shape(
-    version_id: uuid.UUID,
-    shape_id: str,
-    body: ShapeUpdate,
-    _: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Shape:
-    await _get_version_or_404(version_id, session)
-    shape = await _get_shape_or_404(version_id, shape_id, session)
-
-    shape.shape_name = body.shape_name.strip() if body.shape_name is not None else None
-    shape.shape_polyline = body.shape_polyline
-    shape.routed_polyline = body.routed_polyline
-    await session.commit()
-    await session.refresh(shape)
-
-    # Apply shape to all trips with matching pattern if requested
-    if body.apply_to_pattern and body.pattern_hash:
-        await session.execute(
-            update(Trip).where(
-                Trip.version_id == version_id,
-                Trip.geo_pattern_hash == body.pattern_hash,
-                Trip.shape_id.is_(None),
-            ).values(shape_id=shape_id)
-        )
-        await session.commit()
-
-    return shape
-
-
-@router.delete(
-    "/shapes/{shape_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a shape and detach it from trips",
-    dependencies=[require(Permission.SCHEDULE_DELETE)],
-)
-async def delete_shape(
-    version_id: uuid.UUID,
-    shape_id: str,
-    _: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> None:
-    await _get_version_or_404(version_id, session)
-    shape = await _get_shape_or_404(version_id, shape_id, session)
-
-    await session.execute(
-        update(Trip)
-        .where(Trip.version_id == version_id, Trip.shape_id == shape_id)
-        .values(shape_id=None)
-        .execution_options(synchronize_session="fetch")
-    )
-    await session.delete(shape)
-    await session.commit()
 
 
 # ===========================================================================

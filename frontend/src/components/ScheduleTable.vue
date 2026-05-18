@@ -18,7 +18,6 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client.js'
 import { toast } from '@/stores/toast.js'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import RoutePathMapModal from '@/components/RoutePathMapModal.vue'
 import ScheduleTableFlyout from '@/components/ScheduleTableFlyout.vue'
 import ScheduleTableAttrFlyout from '@/components/ScheduleTableAttrFlyout.vue'
 import ScheduleTimeContextMenu from '@/components/ScheduleTimeContextMenu.vue'
@@ -83,7 +82,8 @@ function createEmptyTrip() {
 
 const trips     = ref([])
 const dummyTrip = ref(createEmptyTrip())
-const shapeLabelById = ref({})
+const shapeLabelById    = ref({})
+const shapeRouteTypeById = ref({})
 
 async function deleteTrip(trip) {
   if (!canMakeRequest('delete')) {
@@ -248,14 +248,17 @@ async function ensureShapeLabels(shapeIds) {
   if (!props.versionId || missing.length === 0) return
 
   const results = await Promise.all(
-    missing.map(id => api.schedule.shapes.get(props.versionId, id).catch(() => null))
+    missing.map(id => api.shapes.get(props.versionId, id).catch(() => null))
   )
-  const next = { ...shapeLabelById.value }
+  const nextLabels     = { ...shapeLabelById.value }
+  const nextRouteTypes = { ...shapeRouteTypeById.value }
   for (const row of results) {
     if (!row) continue
-    next[row.shape_id] = row.shape_name ?? row.shape_id
+    nextLabels[row.shape_id]     = row.shape_name ?? row.shape_id
+    nextRouteTypes[row.shape_id] = row.route_type ?? null
   }
-  shapeLabelById.value = next
+  shapeLabelById.value     = nextLabels
+  shapeRouteTypeById.value = nextRouteTypes
 }
 
 // ---- Trip persistence helpers ----
@@ -431,7 +434,8 @@ watch(
 watch(() => props.canRead, () => loadTrips())
 watch(() => props.versionId, () => {
   routePathSearchResults.value = []
-  shapeLabelById.value = {}
+  shapeLabelById.value     = {}
+  shapeRouteTypeById.value = {}
 })
 
 // ---- Permission-based UI modes ----
@@ -456,7 +460,7 @@ const routePathItems = computed(() => {
   const merged = {}
 
   for (const [id, label] of Object.entries(shapeLabelById.value)) {
-    merged[id] = { id, label, sublabel: label !== id ? id : undefined }
+    merged[id] = { id, label }
   }
   for (const item of routePathSearchResults.value) {
     merged[item.id] = item
@@ -467,26 +471,30 @@ const routePathItems = computed(() => {
 
 function routePathItemsForTrip(trip) {
   const query = routePathSearchQuery.value.trim()
-  const currentItems = query
+  const allItems = query
     ? [...routePathSearchResults.value].sort((a, b) => a.label.localeCompare(b.label))
     : [...routePathItems.value]
 
-  if (query) return currentItems
+  // Client-side filter by route type
+  const filtered = props.routeType != null
+    ? allItems.filter(item => shapeRouteTypeById.value[item.id] === props.routeType)
+    : allItems
+
+  if (query) return filtered
 
   const preferredId = trip?.geo_pattern_hash ?? null
-  if (!preferredId) return currentItems
+  if (!preferredId) return filtered
 
-  const preferredIndex = currentItems.findIndex(item => item.id === preferredId)
-  if (preferredIndex < 0) return currentItems
+  const preferredIndex = filtered.findIndex(item => item.id === preferredId)
+  if (preferredIndex < 0) return filtered
 
   const preferredItem = {
-    ...currentItems[preferredIndex],
+    ...filtered[preferredIndex],
     icon: 'task_alt',
     iconClass: 'sft-item__icon--success',
   }
 
-  const result = [preferredItem, ...currentItems.filter((_, index) => index !== preferredIndex)]
-  return result
+  return [preferredItem, ...filtered.filter((_, index) => index !== preferredIndex)]
 }
 
 async function loadRoutePaths(query = '') {
@@ -495,16 +503,20 @@ async function loadRoutePaths(query = '') {
     return
   }
   try {
-    const rows = await api.schedule.shapes.search(props.versionId, query, 50)
+    const rows = await api.schedule.shapes.search(props.versionId, query, 50, null)
     routePathSearchResults.value = rows.map(shape => ({
       id: shape.shape_id,
       label: shape.shape_name ?? shape.shape_id,
+      routeType: shape.route_type ?? null,
     }))
-    const next = { ...shapeLabelById.value }
+    const nextLabels     = { ...shapeLabelById.value }
+    const nextRouteTypes = { ...shapeRouteTypeById.value }
     for (const shape of rows) {
-      next[shape.shape_id] = shape.shape_name ?? shape.shape_id
+      nextLabels[shape.shape_id]     = shape.shape_name ?? shape.shape_id
+      nextRouteTypes[shape.shape_id] = shape.route_type ?? null
     }
-    shapeLabelById.value = next
+    shapeLabelById.value     = nextLabels
+    shapeRouteTypeById.value = nextRouteTypes
   } catch {
     routePathSearchResults.value = []
   }
@@ -567,125 +579,6 @@ function clearDummyRoutePath() {
   closeRoutePathDropdown()
 }
 
-// ---- Route path map modal ----
-const routePathModalOpen = ref(false)
-const routePathModalTripId = ref(null)  // trip.id | 'dummy' | null
-const routePathModalShapeName = ref('')
-const routePathModalExistingPolyline = ref(null)
-const routePathModalExistingRoutedPolyline = ref(null)
-const routePathModalServerError = ref(null)
-const routePathModalSaving = ref(false)
-
-const routePathModalTrip = computed(() => {
-  if (routePathModalTripId.value === 'dummy') return dummyTrip.value
-  return trips.value.find(t => t.id === routePathModalTripId.value) ?? null
-})
-
-const routePathModalShapeId = computed(() => routePathModalTrip.value?.geo_pattern_hash ?? '')
-
-const routePathModalServedStops = computed(() => {
-  const trip = routePathModalTrip.value
-  if (!trip) return []
-
-  // Always show only stops with departure times for this trip
-  return bandEntries.value
-    .filter(entry => (trip.times?.[entry.id] ?? '').trim() !== '')
-    .map(entry => {
-      const platform = platformMap.value[entry.stop_id] ?? {}
-      return {
-        stop_id: entry.stop_id,
-        stop_name: platform.stop_name ?? entry.stop_id,
-        platform_code: platform.platform_code ?? null,
-        stop_lat: platform.stop_lat ?? null,
-        stop_lon: platform.stop_lon ?? null,
-      }
-    })
-})
-
-async function openRoutePathModal(id) {
-  routePathModalTripId.value = id
-  routePathModalShapeName.value = ''
-  routePathModalExistingPolyline.value = null
-  routePathModalExistingRoutedPolyline.value = null
-  routePathModalServerError.value = null
-
-  const trip = id === 'dummy'
-    ? dummyTrip.value
-    : trips.value.find(t => t.id === id)
-
-  if (trip?.route_path && props.versionId) {
-    try {
-      const shape = await api.schedule.shapes.get(props.versionId, trip.route_path)
-      routePathModalShapeName.value = shape.shape_name ?? shape.shape_id
-      routePathModalExistingPolyline.value = shape.shape_polyline ?? null
-      routePathModalExistingRoutedPolyline.value = shape.routed_polyline ?? null
-      shapeLabelById.value = {
-        ...shapeLabelById.value,
-        [shape.shape_id]: shape.shape_name ?? shape.shape_id,
-      }
-    } catch {
-      routePathModalShapeName.value = shapeLabelById.value[trip.route_path] ?? ''
-      routePathModalExistingPolyline.value = null
-    }
-  }
-
-  routePathModalOpen.value = true
-}
-
-async function saveRoutePathFromModal(payload) {
-  const trip = routePathModalTrip.value
-  if (!trip || !props.versionId) return
-  if (!canMakeRequest('write')) {
-    toast.show(t('common.permission_denied'), 'error')
-    return
-  }
-
-  routePathModalSaving.value = true
-  routePathModalServerError.value = null
-
-  try {
-    try {
-      await api.schedule.shapes.update(props.versionId, payload.shape_id, {
-        shape_name: payload.shape_name,
-        shape_polyline: payload.shape_polyline,
-        routed_polyline: payload.routed_polyline ?? null,
-        apply_to_pattern: !!payload.apply_to_pattern,
-        pattern_hash: payload.pattern_hash ?? null,
-      })
-    } catch (err) {
-      if (err?.status === 404) {
-        await api.schedule.shapes.create(props.versionId, payload)
-      } else {
-        throw err
-      }
-    }
-
-    shapeLabelById.value = {
-      ...shapeLabelById.value,
-      [payload.shape_id]: payload.shape_name,
-    }
-
-    trip.route_path = payload.shape_id
-    if (trip.saved) {
-      await updateTripOnBackend(trip)
-    } else if (trip.id === null || trip.tripId === null) {
-      onDummyInput({ fieldName: 'route_path' })
-    } else {
-      await maybeSaveTrip(trip)
-    }
-
-    if (payload.apply_to_pattern) {
-      await loadTrips()
-    }
-
-    routePathModalOpen.value = false
-    closeRoutePathDropdown()
-  } catch {
-    routePathModalServerError.value = t('schedule.route_path_modal.save_error')
-  } finally {
-    routePathModalSaving.value = false
-  }
-}
 
 // ---- Attributes flyout ----
 const attrOpen = ref(null)  // tripId | 'dummy' | null
@@ -1258,6 +1151,7 @@ defineExpose({
                 <div :data-rp-trip="trip.id">
                   <ScheduleTableFlyout
                     :model-value="trip.route_path"
+                    :value-label="trip.route_path ? (shapeLabelById[trip.route_path] || trip.route_path) : ''"
                     :items="routePathItemsForTrip(trip)"
                     placeholder="—"
                     :search-placeholder="t('schedule.route_path_search')"
@@ -1275,10 +1169,6 @@ defineExpose({
                         <md-icon>delete</md-icon>
                         {{ t('schedule.route_path_delete') }}
                       </button>
-                      <button class="schedule-table__map-btn" type="button" @mousedown.prevent @click.stop="openRoutePathModal(trip.id)">
-                        <md-icon>map</md-icon>
-                        {{ t('schedule.route_path_map') }}
-                      </button>
                     </template>
                   </ScheduleTableFlyout>
                 </div>
@@ -1288,6 +1178,7 @@ defineExpose({
                   <div data-rp-trip="dummy">
                     <ScheduleTableFlyout
                       :model-value="dummyTrip.route_path"
+                      :value-label="dummyTrip.route_path ? (shapeLabelById[dummyTrip.route_path] || dummyTrip.route_path) : ''"
                       :items="routePathItemsForTrip(dummyTrip)"
                       :placeholder="t('schedule.trip_placeholder')"
                       :search-placeholder="t('schedule.route_path_search')"
@@ -1303,10 +1194,6 @@ defineExpose({
                         <button class="schedule-table__map-btn schedule-table__map-btn--danger" type="button" @mousedown.prevent @click.stop="clearDummyRoutePath">
                           <md-icon>delete</md-icon>
                           {{ t('schedule.route_path_delete') }}
-                        </button>
-                        <button class="schedule-table__map-btn" type="button" @mousedown.prevent @click.stop="openRoutePathModal('dummy')">
-                          <md-icon>map</md-icon>
-                          {{ t('schedule.route_path_map') }}
                         </button>
                       </template>
                     </ScheduleTableFlyout>
@@ -1560,19 +1447,6 @@ defineExpose({
       :cancel-label="t('common.cancel')"
       :danger="true"
       @confirm="handleConfirmDelete"
-    />
-
-    <RoutePathMapModal
-      v-model="routePathModalOpen"
-      :shape-id="routePathModalShapeId"
-      :initial-name="routePathModalShapeName"
-      :served-stops="routePathModalServedStops"
-      :existing-polyline="routePathModalExistingPolyline"
-      :existing-routed-polyline="routePathModalExistingRoutedPolyline"
-      :route-type="props.routeType"
-      :loading="routePathModalSaving"
-      :server-error="routePathModalServerError"
-      @save="saveRoutePathFromModal"
     />
 
   </div>
@@ -2251,7 +2125,7 @@ tbody .schedule-table__filler-cell {
   overflow: visible;
 }
 
-/* "In der Karte routen …" footer button inside the route-path flyout */
+/* footer button inside the route-path flyout */
 .schedule-table__map-btn {
   display: flex;
   align-items: center;

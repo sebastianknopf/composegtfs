@@ -212,14 +212,11 @@ export const api = {
       delete: (versionId, routeId, tripId, routeBandStopId)       => request('DELETE', `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`),
     },
     shapes: {
-      search: (versionId, query = '', limit = 50) => request(
-        'GET',
-        `/versions/${versionId}/schedule/shapes?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
-      ),
-      get:    (versionId, shapeId)       => request('GET',    `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
-      create: (versionId, data)          => request('POST',   `/versions/${versionId}/schedule/shapes`, data),
-      update: (versionId, shapeId, data) => request('PUT',    `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`, data),
-      delete: (versionId, shapeId)       => request('DELETE', `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
+      search: (versionId, query = '', limit = 50, routeType = null) => {
+        let url = `/versions/${versionId}/schedule/shapes?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`
+        if (routeType !== null && routeType !== undefined) url += `&route_type=${encodeURIComponent(routeType)}`
+        return request('GET', url)
+      },
     },
   },
 
@@ -229,12 +226,34 @@ export const api = {
     create:             (versionId, data)                        => request('POST',   `/versions/${versionId}/stops`, data),
     get:                (versionId, stopId)                      => request('GET',    `/versions/${versionId}/stops/${stopId}`),
     update:             (versionId, stopId, data)                => request('PUT',    `/versions/${versionId}/stops/${stopId}`, data),
-    delete:             (versionId, stopId)                      => request('DELETE', `/versions/${versionId}/stops/${stopId}`),
+    delete:             (versionId, stopId)                      => {
+      const token = localStorage.getItem('access_token')
+      return fetch(`${BASE}/versions/${versionId}/stops/${stopId}`, {
+        method: 'DELETE',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      })
+    },
     listPlatforms:      (versionId, stopId)                      => request('GET',    `/versions/${versionId}/stops/${stopId}/platforms`),
     createPlatform:     (versionId, stopId, data)                => request('POST',   `/versions/${versionId}/stops/${stopId}/platforms`, data),
     getPlatform:        (versionId, stopId, platformId)          => request('GET',    `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`),
-    updatePlatform:     (versionId, stopId, platformId, data)    => request('PUT',    `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`, data),
-    deletePlatform:     (versionId, stopId, platformId)          => request('DELETE', `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`),
+    updatePlatform:     (versionId, stopId, platformId, data)    => {
+      const token = localStorage.getItem('access_token')
+      return fetch(`${BASE}/versions/${versionId}/stops/${stopId}/platforms/${platformId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(data),
+      })
+    },
+    deletePlatform:     (versionId, stopId, platformId)          => {
+      const token = localStorage.getItem('access_token')
+      return fetch(`${BASE}/versions/${versionId}/stops/${stopId}/platforms/${platformId}`, {
+        method: 'DELETE',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      })
+    },
   },
 
   auxCalendars: {
@@ -248,11 +267,12 @@ export const api = {
     deleteDate: (versionId, auxCalendarId, date)   => request('DELETE', `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates/${date}`),
   },
 
-  networkShapes: {
-    list:   (versionId)              => request('GET',   `/versions/${versionId}/network/shapes`),
-    get:    (versionId, shapeId)     => request('GET',   `/versions/${versionId}/network/shapes/${encodeURIComponent(shapeId)}`),
-    update: (versionId, shapeId, data) => request('PATCH', `/versions/${versionId}/network/shapes/${encodeURIComponent(shapeId)}`, data),
-    delete: (versionId, shapeId)     => request('DELETE', `/versions/${versionId}/network/shapes/${encodeURIComponent(shapeId)}`),
+  shapes: {
+    list:   (versionId)                => request('GET',   `/versions/${versionId}/shapes`),
+    get:    (versionId, shapeId)       => request('GET',   `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`),
+    create: (versionId, data)          => request('POST',  `/versions/${versionId}/shapes`, data),
+    update: (versionId, shapeId, data) => request('PATCH', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`, data),
+    delete: (versionId, shapeId)       => request('DELETE', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`),
   },
 
   gtfsExport: {

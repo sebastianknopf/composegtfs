@@ -16,6 +16,8 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 # Known setting keys with their default values
 DEFAULTS: dict[str, str] = {
     "app.title": "composegtfs",
+    "app.primary_color": "303845",
+    "app.secondary_color": "1f69e0",
     "map.tile_url": "https://tiles.openfreemap.org/styles/positron",
 }
 
@@ -23,11 +25,15 @@ DEFAULTS: dict[str, str] = {
 class AppSettingsResponse(BaseModel):
     app_title: str
     map_tile_url: str
+    app_primary_color: str
+    app_secondary_color: str
 
 
 class AppSettingsUpdate(BaseModel):
     app_title: str
     map_tile_url: str
+    app_primary_color: str
+    app_secondary_color: str
 
 
 async def _load(session: AsyncSession) -> dict[str, str]:
@@ -45,6 +51,8 @@ async def get_settings(
     return AppSettingsResponse(
         app_title=data["app.title"],
         map_tile_url=data["map.tile_url"],
+        app_primary_color=data["app.primary_color"],
+        app_secondary_color=data["app.secondary_color"],
     )
 
 
@@ -57,6 +65,8 @@ async def save_settings(
 ) -> AppSettingsResponse:
     updates: dict[str, str] = {
         "app.title": body.app_title,
+        "app.primary_color": body.app_primary_color,
+        "app.secondary_color": body.app_secondary_color,
         "map.tile_url": body.map_tile_url,
     }
     for key, value in updates.items():
@@ -67,4 +77,6 @@ async def save_settings(
     return AppSettingsResponse(
         app_title=updates["app.title"],
         map_tile_url=updates["map.tile_url"],
+        app_primary_color=updates["app.primary_color"],
+        app_secondary_color=updates["app.secondary_color"],
     )

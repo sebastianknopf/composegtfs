@@ -31,21 +31,23 @@ const props = defineProps({
   stop:        { type: Object,  default: null },
   initLat:     { type: Number,  default: null },
   initLon:     { type: Number,  default: null },
-  loading:     { type: Boolean, default: false },
-  serverError: { type: String,  default: null },
-  canDelete:   { type: Boolean, default: false },
-  platforms:   { type: Array,   default: () => [] },
-  readonly:    { type: Boolean, default: false },
+  loading:          { type: Boolean, default: false },
+  serverError:      { type: String,  default: null },
+  canDelete:        { type: Boolean, default: false },
+  platforms:        { type: Array,   default: () => [] },
+  readonly:         { type: Boolean, default: false },
+  rerouting:        { type: Boolean, default: false },
+  reroutingMessage: { type: String,  default: null },
 })
 
-const emit = defineEmits(['update:modelValue', 'save', 'delete', 'add-platform', 'edit-platform'])
+const emit = defineEmits(['update:modelValue', 'save', 'delete', 'add-platform', 'edit-platform', 'cancel'])
 const { t } = useI18n()
 
 // IANA timezone list (browser-provided)
 const TIMEZONE_OPTIONS = Intl.supportedValuesOf('timeZone').sort()
 
 const isEdit = computed(() => !!props.stop)
-const isReadonly = computed(() => props.readonly)
+const isReadonly = computed(() => props.readonly || props.rerouting)
 
 // ---------------------------------------------------------------------------
 // Form state
@@ -196,6 +198,7 @@ watch(() => props.stop, () => {
 // ---------------------------------------------------------------------------
 
 function handleCancel() {
+  emit('cancel')
   emit('update:modelValue', false)
 }
 
@@ -416,20 +419,21 @@ function handleDelete() {
         <div class="panel-actions-left">
           <md-filled-button
             v-if="!isReadonly && isEdit && canDelete"
-            :disabled="loading"
+            :disabled="loading || rerouting"
             class="panel-delete-btn"
             @click="handleDelete"
           >
             <md-icon slot="icon">delete</md-icon>
             {{ t('stops.delete') }}
           </md-filled-button>
-          <span v-if="serverError" class="panel-error">{{ serverError }}</span>
+          <span v-if="reroutingMessage" class="panel-rerouting-msg">{{ reroutingMessage }}</span>
+          <span v-else-if="serverError" class="panel-error">{{ serverError }}</span>
         </div>
         <div class="panel-actions-right">
-          <md-text-button :disabled="loading" @click="handleCancel">
+          <md-text-button :disabled="loading || rerouting" @click="handleCancel">
             {{ t('stops.cancel') }}
           </md-text-button>
-          <md-filled-button v-if="!isReadonly" :disabled="loading" @click="handleSave">
+          <md-filled-button v-if="!isReadonly" :disabled="loading || rerouting" @click="handleSave">
             {{ t('stops.save') }}
           </md-filled-button>
         </div>
@@ -562,6 +566,15 @@ function handleDelete() {
 .panel-error {
   font-size: var(--font-size-0, 0.78rem);
   color: var(--md-sys-color-error, #ba1a1a);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-rerouting-msg {
+  font-size: var(--font-size-0, 0.78rem);
+  color: var(--md-sys-color-on-surface-variant, #49454f);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

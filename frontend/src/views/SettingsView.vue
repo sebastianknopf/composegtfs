@@ -7,38 +7,114 @@ import { usePermissions } from '@/composables/usePermissions.js'
 import '@material/web/textfield/outlined-text-field.js'
 import '@material/web/button/filled-button.js'
 import '@material/web/icon/icon.js'
+import ColorInput from '@/components/ColorInput.vue'
 
 const { t } = useI18n()
 const { has } = usePermissions()
 const canSave = has('settings:write')
 
 const appTitle = ref('')
+const appPrimaryColor = ref('')
+const appSecondaryColor = ref('')
 const mapTileUrl = ref('')
 const saving = ref(false)
 const statusKey = ref(null) // 'settings.saved' | 'settings.error' | null
+
+// ---------------------------------------------------------------------------
+// Form state
+// ---------------------------------------------------------------------------
+
+function emptyErrors() {
+  return {
+    app_primary_color:      null,
+    app_secondary_color:    null,
+    map_tile_url:           null
+  }
+}
+
+const fieldErrors = ref(emptyErrors())
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+function clearFieldError(name) {
+  fieldErrors.value[name] = null
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const u = new URL(value)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function validate() {
+  fieldErrors.value = emptyErrors()
+  let ok = true
+
+  const url = mapTileUrl.value.trim()
+  if (!isValidHttpUrl(url)) {
+    fieldErrors.value.map_tile_url = t('settings.validation_url_invalid')
+    ok = false
+  }
+  
+  const HEX6_RE = /^[0-9A-Fa-f]{6}$/
+  const primaryColor = appPrimaryColor.value.trim()
+  if (primaryColor && !HEX6_RE.test(primaryColor)) {
+    fieldErrors.value.app_primary_color = t('settings.validation_app_color_error')
+    ok = false
+  }
+  const secondaryColor = appSecondaryColor.value.trim()
+  if (secondaryColor && !HEX6_RE.test(secondaryColor)) {
+    fieldErrors.value.app_secondary_color = t('settings.validation_app_color_error')
+    ok = false
+  }
+
+  return ok
+}
+
+// ---------------------------------------------------------------------------
+// Populate form
+// ---------------------------------------------------------------------------
 
 onMounted(async () => {
   try {
     const data = await api.settings.get()
     appTitle.value = data.app_title
+    appPrimaryColor.value = data.app_primary_color
+    appSecondaryColor.value = data.app_secondary_color
     mapTileUrl.value = data.map_tile_url
   } catch {
     appTitle.value = settingsStore.state.appTitle
+    appPrimaryColor.value = settingsStore.state.appPrimaryColor
+    appSecondaryColor.value = settingsStore.state.appSecondaryColor
     mapTileUrl.value = settingsStore.state.mapTileUrl
   }
 })
 
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
 async function save() {
+  if (!validate()) return  
   saving.value = true
   statusKey.value = null
   try {
     const data = await api.settings.save({
       app_title: appTitle.value,
+      app_primary_color: appPrimaryColor.value,
+      app_secondary_color: appSecondaryColor.value,
       map_tile_url: mapTileUrl.value,
     })
     // Apply to global store so all reactive consumers update immediately
     settingsStore.apply(data)
     appTitle.value = data.app_title
+    appPrimaryColor.value = data.app_primary_color
+    appSecondaryColor.value = data.app_secondary_color
     mapTileUrl.value = data.map_tile_url
     statusKey.value = 'settings.saved'
   } catch {
@@ -69,7 +145,10 @@ async function save() {
           :label="t('settings.map_tile_url')"
           :supporting-text="t('settings.map_tile_url_hint')"
           :value="mapTileUrl"
-          @input="mapTileUrl = $event.target.value"
+          :error="!!fieldErrors.map_tile_url"
+          :error-text="fieldErrors.map_tile_url ?? ''"
+          :disabled="!canSave"
+          @input="mapTileUrl = $event.target.value; clearFieldError('map_tile_url')"
         />
       </div>
     </section>
@@ -97,7 +176,22 @@ async function save() {
           :label="t('settings.app_title')"
           :supporting-text="t('settings.app_title_hint')"
           :value="appTitle"
+          :disabled="!canSave"
           @input="appTitle = $event.target.value"
+        />
+        <ColorInput
+          :model-value="appPrimaryColor"
+          :label="t('settings.app_primary_color')"
+          :error="fieldErrors.app_primary_color"
+          :disabled="!canSave"
+          @update:model-value="appPrimaryColor = $event; clearFieldError('app_primary_color')"
+        />
+        <ColorInput
+          :model-value="appSecondaryColor"
+          :label="t('settings.app_secondary_color')"
+          :error="fieldErrors.app_secondary_color"
+          :disabled="!canSave"
+          @update:model-value="appSecondaryColor = $event; clearFieldError('app_secondary_color')"
         />
       </div>
     </section>

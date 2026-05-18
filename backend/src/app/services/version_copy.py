@@ -34,6 +34,7 @@ from app.models import (
     Route,
     RouteBandStop,
     Shape,
+    ShapeIntermediatePoint,
     Stop,
     StopTime,
     Trip,
@@ -88,7 +89,7 @@ async def run_copy(
                 await _copy_agencies(session, source_version_id, new_vid)
             if include_day_types:
                 await _copy_day_types(session, source_version_id, new_vid)
-            if include_stops:
+            if include_stops or include_shapes or include_schedule:
                 await _copy_stops(session, source_version_id, new_vid)
             if include_shapes or include_schedule:
                 await _copy_shapes(session, source_version_id, new_vid)
@@ -131,7 +132,7 @@ async def run_copy(
                 await _merge_agencies(session, source_version_id, new_vid)
             if include_day_types:
                 await _merge_day_types(session, source_version_id, new_vid)
-            if include_stops:
+            if include_stops or include_shapes or include_schedule:
                 await _merge_stops(session, source_version_id, new_vid)
             if include_shapes or include_schedule:
                 await _merge_shapes(session, source_version_id, new_vid)
@@ -362,7 +363,7 @@ async def _copy_shapes(
     src_vid: uuid.UUID,
     dst_vid: uuid.UUID,
 ) -> None:
-    """Copy all shapes from source to destination version."""
+    """Copy all shapes and their intermediate points from source to destination."""
     shapes = (
         await session.execute(select(Shape).where(Shape.version_id == src_vid))
     ).scalars().all()
@@ -373,8 +374,28 @@ async def _copy_shapes(
             shape_name=s.shape_name,
             shape_polyline=s.shape_polyline,
             routed_polyline=s.routed_polyline,
+            description=s.description,
+            route_type=s.route_type,
+            is_autoroute_active=s.is_autoroute_active,
         ))
     await session.flush()
+
+    points = (
+        await session.execute(
+            select(ShapeIntermediatePoint).where(
+                ShapeIntermediatePoint.version_id == src_vid
+            )
+        )
+    ).scalars().all()
+    for p in points:
+        session.add(ShapeIntermediatePoint(
+            version_id=dst_vid,
+            shape_id=p.shape_id,
+            sort_order=p.sort_order,
+            lat=p.lat,
+            lon=p.lon,
+            stop_id=p.stop_id,
+        ))
 
 
 async def _merge_shapes(
@@ -382,7 +403,7 @@ async def _merge_shapes(
     src_vid: uuid.UUID,
     dst_vid: uuid.UUID,
 ) -> None:
-    """Copy shapes that do not yet exist in destination version."""
+    """Copy shapes (and their intermediate points) that do not yet exist in destination."""
     existing_shapes = set(
         (await session.execute(
             select(Shape.shape_id).where(Shape.version_id == dst_vid)
@@ -391,16 +412,40 @@ async def _merge_shapes(
     shapes = (
         await session.execute(select(Shape).where(Shape.version_id == src_vid))
     ).scalars().all()
+    new_shape_ids: set[str] = set()
     for s in shapes:
         if s.shape_id not in existing_shapes:
+            new_shape_ids.add(s.shape_id)
             session.add(Shape(
                 version_id=dst_vid,
                 shape_id=s.shape_id,
                 shape_name=s.shape_name,
                 shape_polyline=s.shape_polyline,
                 routed_polyline=s.routed_polyline,
+                description=s.description,
+                route_type=s.route_type,
+                is_autoroute_active=s.is_autoroute_active,
             ))
     await session.flush()
+
+    if new_shape_ids:
+        points = (
+            await session.execute(
+                select(ShapeIntermediatePoint).where(
+                    ShapeIntermediatePoint.version_id == src_vid,
+                    ShapeIntermediatePoint.shape_id.in_(new_shape_ids),
+                )
+            )
+        ).scalars().all()
+        for p in points:
+            session.add(ShapeIntermediatePoint(
+                version_id=dst_vid,
+                shape_id=p.shape_id,
+                sort_order=p.sort_order,
+                lat=p.lat,
+                lon=p.lon,
+                stop_id=p.stop_id,
+            ))
 
 
 async def _copy_schedule(

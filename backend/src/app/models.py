@@ -263,6 +263,11 @@ class Stop(Base):
     stop_access         = Column(SmallInteger, nullable=True)
 
     version = relationship("Version", back_populates="stops")
+    shape_intermediate_points = relationship(
+        "ShapeIntermediatePoint",
+        back_populates="stop",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -356,13 +361,60 @@ class RouteBandStop(Base):
 class Shape(Base):
     __tablename__ = "shapes"
 
-    version_id       = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
-    shape_id         = Column(String(255), primary_key=True)
-    shape_name       = Column(String(255), nullable=True)
-    shape_polyline   = Column(Text, nullable=False)
-    routed_polyline  = Column(Text, nullable=True)
+    version_id          = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    shape_id            = Column(String(255), primary_key=True)
+    shape_name          = Column(String(255), nullable=True)
+    shape_polyline      = Column(Text, nullable=False)
+    routed_polyline     = Column(Text, nullable=True)
+    description         = Column(Text, nullable=True)
+    route_type          = Column(Integer, nullable=True)
+    is_autoroute_active = Column(Boolean, nullable=False, default=False)
 
     version = relationship("Version", back_populates="shapes")
+    intermediate_points = relationship(
+        "ShapeIntermediatePoint",
+        back_populates="shape",
+        cascade="all, delete-orphan",
+        order_by="ShapeIntermediatePoint.sort_order",
+    )
+
+
+# ---------------------------------------------------------------------------
+# ShapeIntermediatePoint  — ordered intermediate points for a Shape.
+#
+# Each point is either a free coordinate (lat/lon set, stop_id NULL) or
+# a reference to a stop/platform (stop_id set, lat/lon ignored).
+# Deleting the parent Shape or the referenced Stop cascades to this table.
+# ---------------------------------------------------------------------------
+
+class ShapeIntermediatePoint(Base):
+    __tablename__ = "shape_intermediate_points"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version_id = Column(UUID(as_uuid=True), nullable=False)
+    shape_id   = Column(String(255), nullable=False)
+    sort_order = Column(Integer, nullable=False)
+    lat        = Column(Float, nullable=True)
+    lon        = Column(Float, nullable=True)
+    stop_id    = Column(String(255), nullable=True)
+
+    shape = relationship("Shape", back_populates="intermediate_points")
+    stop  = relationship("Stop", back_populates="shape_intermediate_points")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "shape_id"],
+            ["shapes.version_id", "shapes.shape_id"],
+            name="fk_sip_shape",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["version_id", "stop_id"],
+            ["stops.version_id", "stops.stop_id"],
+            name="fk_sip_stop",
+            ondelete="CASCADE",
+        ),
+    )
 
 
 

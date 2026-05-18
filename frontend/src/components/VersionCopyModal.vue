@@ -63,9 +63,11 @@ const forced = computed(() => {
   if (checks.routes || checks.route_bands || checks.schedule) {
     f.add('agencies')
   }
+  if (checks.shapes || checks.route_bands || checks.schedule) {
+    f.add('stops')
+  }
   if (checks.route_bands || checks.schedule) {
     f.add('routes')
-    f.add('stops')
   }
   if (checks.schedule) {
     f.add('route_bands')

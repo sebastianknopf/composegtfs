@@ -51,6 +51,7 @@ class ExportRequest(BaseModel):
     date_from:        date
     date_to:          date
     export_all_stops: bool = False
+    export_shapes:    bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +85,7 @@ async def gtfs_export(
             date_from=body.date_from,
             date_to=body.date_to,
             export_all_stops=body.export_all_stops,
+            export_shapes=body.export_shapes,
             session=session,
         ):
             yield _sse(event)
