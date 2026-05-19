@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { versionsStore } from '@/stores/versions.js'
 import { usePermissions } from '@/composables/usePermissions.js'
 import { api } from '@/api/client.js'
+import { toast } from '@/stores/toast.js'
 import ScheduleSideBar from '@/components/ScheduleSideBar.vue'
 import ScheduleTable from '@/components/ScheduleTable.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -236,6 +237,43 @@ async function confirmDeleteTrips() {
     // TODO: Fehler per Toast anzeigen
   }
 }
+
+// ---- Wizard ----
+const wizardMenuOpen  = ref(false)
+const wizardLoading   = ref(false)
+// Close the menu whenever the selection changes so it doesn't auto-open
+// when the wizard button appears after a trip is selected.
+watch(selectedTripsCount, () => { wizardMenuOpen.value = false })
+
+async function onWizardAssignShapes() {
+  wizardMenuOpen.value = false
+  if (!canWriteSchedule.value) return
+  const trips = scheduleTableRef.value?.trips ?? []
+  const selected = trips.filter(t => t.selected)
+  if (!selected.length) return
+  const tripIds = selected.map(t => t.tripId)
+  wizardLoading.value = true
+  try {
+    const result = await api.schedule.trips.wizardAssignShapes(
+      versionId.value,
+      selectedRoute.value.route_id,
+      tripIds,
+    )
+    const parts = []
+    if (result.updated        > 0) parts.push(t('schedule.wizard_result_updated',  { count: result.updated }))
+    if (result.already_assigned > 0) parts.push(t('schedule.wizard_result_already',  { count: result.already_assigned }))
+    if (result.no_match       > 0) parts.push(t('schedule.wizard_result_no_match', { count: result.no_match }))
+    const type = result.updated > 0 ? 'info' : 'error'
+    toast.show(parts.length ? parts.join(' ') : t('schedule.wizard_result_no_match', { count: 0 }), type)
+    if (result.updated > 0) {
+      await scheduleTableRef.value?.loadTrips?.()
+    }
+  } catch {
+    toast.show(t('schedule.wizard_assign_shapes_error'), 'error')
+  } finally {
+    wizardLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -336,6 +374,28 @@ async function confirmDeleteTrips() {
           </div>
 
           <span class="schedule-toolbar__count">{{ selectedTripsCount }}/{{ visibleTripsCount }}</span>
+
+          <div v-if="canWriteSchedule && selectedTripsCount > 0" class="schedule-toolbar__wizard">
+            <md-outlined-button
+              id="wizard-menu-btn"
+              class="schedule-toolbar__btn"
+              :disabled="wizardLoading"
+              @click="wizardMenuOpen = !wizardMenuOpen"
+            >
+              <md-icon slot="icon">auto_fix_high</md-icon>
+              {{ t('schedule.wizard_button') }}
+            </md-outlined-button>
+            <md-menu
+              anchor="wizard-menu-btn"
+              :open="wizardMenuOpen"
+              @close="wizardMenuOpen = false"
+              class="schedule-toolbar__menu"
+            >
+              <md-menu-item class="toolbar-menu-item" @click="onWizardAssignShapes">
+                <div slot="headline">{{ t('schedule.wizard_assign_shapes') }}</div>
+              </md-menu-item>
+            </md-menu>
+          </div>
 
           <template v-if="selectedTripsCount > 0">
             <md-outlined-button v-if="canWriteSchedule && selectedTripsCount === 1" class="schedule-toolbar__btn" @click="onCopyTrips">
@@ -443,6 +503,10 @@ async function confirmDeleteTrips() {
 }
 
 .schedule-toolbar__selection {
+  position: relative;
+}
+
+.schedule-toolbar__wizard {
   position: relative;
 }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { authStore } from '@/stores/auth.js'
 import { permissionsStore } from '@/stores/permissions.js'
@@ -111,10 +111,27 @@ const sidebarItems = computed(() => {
 // Per-section collapsed state is managed inside AppSideBar itself.
 // AppView only needs to know the active section to pass as sectionId.
 
+// Remember the last visited view per section so switching back restores it.
+const lastViewPerSection = {}
+watch(
+  () => route.name,
+  (name) => {
+    const section = route.meta?.section
+    if (section && name) lastViewPerSection[section] = name
+  },
+  { immediate: true },
+)
+
 function onSectionChange(id) {
   const allSections = [...sections, exchangeSection]
   const section = allSections.find(s => s.id === id)
-  const target = section?.defaultView ?? section?.views[0]?.id
+  const remembered = lastViewPerSection[id]
+  // Only restore if the remembered view still exists and is accessible
+  const visibleIds = (section?.views ?? []).filter(v => canSeeEntry(v)).map(v => v.id)
+  const hasViews = visibleIds.length > 0
+  const target = (remembered && (!hasViews || visibleIds.includes(remembered)))
+    ? remembered
+    : (section?.defaultView ?? visibleIds[0])
   if (target) router.push({ name: target })
 }
 

@@ -248,7 +248,7 @@ async function ensureShapeLabels(shapeIds) {
   if (!props.versionId || missing.length === 0) return
 
   const results = await Promise.all(
-    missing.map(id => api.shapes.get(props.versionId, id).catch(() => null))
+    missing.map(id => api.schedule.shapes.get(props.versionId, id).catch(() => null))
   )
   const nextLabels     = { ...shapeLabelById.value }
   const nextRouteTypes = { ...shapeRouteTypeById.value }

@@ -218,8 +218,8 @@ function formatDate(iso) {
 }
 
 .day-type-view-dialog__day-badge--weekday {
-  background: rgba(31, 105, 224, 0.12);
-  color: #1f69e0;
+  background: color-mix(in srgb, var(--md-sys-color-primary, #1f69e0) 12%, transparent);
+  color: var(--md-sys-color-primary, #1f69e0);
 }
 
 .day-type-view-dialog__day-badge--weekend {

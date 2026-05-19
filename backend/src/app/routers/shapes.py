@@ -9,9 +9,9 @@ from __future__ import annotations
 import hashlib
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +45,18 @@ class IntermediatePointIn(BaseModel):
     lat: float | None = None
     lon: float | None = None
     stop_id: str | None = None
+
+
+class ShapeSearchOut(BaseModel):
+    """Lightweight shape representation for search/flyout endpoints."""
+    version_id:      uuid.UUID
+    shape_id:        str
+    shape_name:      str | None
+    shape_polyline:  str
+    routed_polyline: str | None
+    route_type:      int | None
+
+    model_config = {"from_attributes": True}
 
 
 class ShapeListOut(BaseModel):
@@ -326,6 +338,38 @@ async def create_shape(
 
     await session.commit()
     return await _get_shape_or_404(version_id, shape_id, session, with_points=True)
+
+
+@router.get(
+    "/search",
+    response_model=list[ShapeSearchOut],
+    summary="Search shapes by name or ID (lightweight, for flyouts)",
+    dependencies=[require(Permission.SHAPES_READ)],
+)
+async def search_shapes(
+    version_id: uuid.UUID,
+    q: str | None = Query(default=None, description="Search by shape_id or shape_name"),
+    limit: int = Query(default=50, ge=1, le=500),
+    route_type: int | None = Query(default=None, description="Filter by route_type"),
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[Shape]:
+    await _get_version_or_404(version_id, session)
+    stmt = select(Shape).where(Shape.version_id == version_id)
+    query = (q or "").strip()
+    if query:
+        like = f"%{query}%"
+        stmt = stmt.where(
+            or_(
+                Shape.shape_id.ilike(like),
+                Shape.shape_name.ilike(like),
+            )
+        )
+    if route_type is not None:
+        stmt = stmt.where(Shape.route_type == route_type)
+    stmt = stmt.order_by(Shape.shape_name.nulls_last(), Shape.shape_id).limit(limit)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
 
 
 @router.get(

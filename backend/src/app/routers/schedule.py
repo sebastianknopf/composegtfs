@@ -552,10 +552,10 @@ async def remove_route_band_stop(
 
 
 # ===========================================================================
-# Shapes
+# Shapes  (schedule-scoped read-only, requires only SCHEDULE_READ)
 # ===========================================================================
 
-class ShapeOut(BaseModel):
+class ScheduleShapeOut(BaseModel):
     version_id:      uuid.UUID
     shape_id:        str
     shape_name:      str | None
@@ -568,11 +568,11 @@ class ShapeOut(BaseModel):
 
 @router.get(
     "/shapes",
-    response_model=list[ShapeOut],
-    summary="Search shapes for route-path flyouts",
+    response_model=list[ScheduleShapeOut],
+    summary="Search shapes (schedule-scoped, for route-path flyouts)",
     dependencies=[require(Permission.SCHEDULE_READ)],
 )
-async def search_shapes(
+async def schedule_search_shapes(
     version_id: uuid.UUID,
     q: str | None = Query(default=None, description="Search by shape_id or shape_name"),
     limit: int = Query(default=50, ge=1, le=500),
@@ -581,7 +581,6 @@ async def search_shapes(
     session: AsyncSession = Depends(get_session),
 ) -> list[Shape]:
     await _get_version_or_404(version_id, session)
-
     stmt = select(Shape).where(Shape.version_id == version_id)
     query = (q or "").strip()
     if query:
@@ -594,10 +593,25 @@ async def search_shapes(
         )
     if route_type is not None:
         stmt = stmt.where(Shape.route_type == route_type)
-
     stmt = stmt.order_by(Shape.shape_name.nulls_last(), Shape.shape_id).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+@router.get(
+    "/shapes/{shape_id}",
+    response_model=ScheduleShapeOut,
+    summary="Get a single shape (schedule-scoped, for label/route-type resolution)",
+    dependencies=[require(Permission.SCHEDULE_READ)],
+)
+async def schedule_get_shape(
+    version_id: uuid.UUID,
+    shape_id: str,
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Shape:
+    await _get_version_or_404(version_id, session)
+    return await _get_shape_or_404(version_id, shape_id, session)
 
 
 # ===========================================================================
@@ -1014,8 +1028,94 @@ async def batch_delete_trips(
 
 
 # ---------------------------------------------------------------------------
-# Batch-Copy
+# Wizard: assign matching shapes
 # ---------------------------------------------------------------------------
+
+class TripWizardAssignShapesRequest(BaseModel):
+    trip_ids: list[str]
+
+
+class TripWizardAssignShapesResponse(BaseModel):
+    updated: int
+    already_assigned: int = 0
+    no_match: int = 0
+
+
+@router.post(
+    "/{route_id}/trips/wizard/assign-shapes",
+    response_model=TripWizardAssignShapesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Assign matching shapes to trips based on geo_pattern_hash",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def wizard_assign_shapes(
+    version_id: uuid.UUID,
+    route_id:   str,
+    req:        TripWizardAssignShapesRequest = Body(...),
+    _:          User                          = Depends(get_current_user),
+    session:    AsyncSession                  = Depends(get_session),
+) -> TripWizardAssignShapesResponse:
+    """For each trip in trip_ids, check whether a Shape with shape_id equal to
+    the trip's geo_pattern_hash exists in this version. If found and the trip
+    does not already reference that shape, the trip is updated.
+
+    Returns the number of trips actually updated.
+    """
+    await _get_version_or_404(version_id, session)
+
+    result = await session.execute(
+        select(Trip).where(
+            Trip.version_id == version_id,
+            Trip.route_id   == route_id,
+            Trip.trip_id.in_(req.trip_ids),
+        )
+    )
+    trips = list(result.scalars().all())
+
+    if not trips:
+        return TripWizardAssignShapesResponse(updated=0)
+
+    # Group trips by geo_pattern_hash; those without a hash count as no_match
+    pattern_to_trips: dict[str, list[Trip]] = {}
+    no_match = 0
+    for trip in trips:
+        if trip.geo_pattern_hash is not None:
+            pattern_to_trips.setdefault(trip.geo_pattern_hash, []).append(trip)
+        else:
+            no_match += 1
+
+    if not pattern_to_trips:
+        return TripWizardAssignShapesResponse(updated=0, no_match=no_match)
+
+    # Look up shapes whose shape_id matches any of the collected hashes
+    shape_result = await session.execute(
+        select(Shape.shape_id).where(
+            Shape.version_id == version_id,
+            Shape.shape_id.in_(list(pattern_to_trips.keys())),
+        )
+    )
+    matching_shape_ids = set(shape_result.scalars().all())
+
+    updated = 0
+    already_assigned = 0
+    for pattern_hash, affected_trips in pattern_to_trips.items():
+        if pattern_hash not in matching_shape_ids:
+            no_match += len(affected_trips)
+            continue
+        for trip in affected_trips:
+            if trip.shape_id != pattern_hash:
+                trip.shape_id = pattern_hash
+                updated += 1
+            else:
+                already_assigned += 1
+
+    if updated:
+        await session.commit()
+
+    return TripWizardAssignShapesResponse(updated=updated, already_assigned=already_assigned, no_match=no_match)
+
+
+
 
 class TripBatchCopyShift(BaseModel):
     offset_minutes: int   # 1..1439

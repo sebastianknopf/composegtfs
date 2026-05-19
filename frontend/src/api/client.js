@@ -205,6 +205,7 @@ export const api = {
       batchDelete: (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-delete`, { trip_ids: tripIds }),
       batchShift:  (versionId, routeId, tripIds, offsetMinutes, direction) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-shift`, { trip_ids: tripIds, offset_minutes: offsetMinutes, direction }),
       batchCopy:   (versionId, routeId, body) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-copy`, body),
+      wizardAssignShapes: (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/wizard/assign-shapes`, { trip_ids: tripIds }),
     },
     stopTimes: {
       list:   (versionId, routeId, tripId)                        => request('GET',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times`),
@@ -217,6 +218,7 @@ export const api = {
         if (routeType !== null && routeType !== undefined) url += `&route_type=${encodeURIComponent(routeType)}`
         return request('GET', url)
       },
+      get: (versionId, shapeId) => request('GET', `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
     },
   },
 
@@ -270,6 +272,11 @@ export const api = {
   shapes: {
     list:   (versionId)                => request('GET',   `/versions/${versionId}/shapes`),
     get:    (versionId, shapeId)       => request('GET',   `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`),
+    search: (versionId, query = '', limit = 50, routeType = null) => {
+      let url = `/versions/${versionId}/shapes/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`
+      if (routeType !== null && routeType !== undefined) url += `&route_type=${encodeURIComponent(routeType)}`
+      return request('GET', url)
+    },
     create: (versionId, data)          => request('POST',  `/versions/${versionId}/shapes`, data),
     update: (versionId, shapeId, data) => request('PATCH', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`, data),
     delete: (versionId, shapeId)       => request('DELETE', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`),

@@ -402,7 +402,7 @@ function updateEditingShapePreview() {
 
 async function loadShapes() {
   const versionId = versionsStore.state.activeVersionId
-  if (!versionId) {
+  if (!versionId || !canReadShapes.value) {
     shapesData.value = []
     updateShapeSource([])
     return
