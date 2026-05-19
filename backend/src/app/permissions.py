@@ -160,6 +160,15 @@ PERMISSION_GROUPS: list[PermissionGroup] = [
             PermissionDef("gtfs:export", "permissions.gtfs.export"),
         ],
     ),
+    PermissionGroup(
+        key="headsigns",
+        lang_key="permissions._groups.headsigns",
+        permissions=[
+            PermissionDef("headsigns:read",   "permissions.headsigns.read"),
+            PermissionDef("headsigns:write",  "permissions.headsigns.write"),
+            PermissionDef("headsigns:delete", "permissions.headsigns.delete"),
+        ],
+    ),
 ]
 
 # Flat set of all valid codenames — used for validation on write
@@ -232,6 +241,11 @@ class Permission(str, Enum):
 
     # GTFS Export
     GTFS_EXPORT = "gtfs:export"
+
+    # Headsigns
+    HEADSIGNS_READ   = "headsigns:read"
+    HEADSIGNS_WRITE  = "headsigns:write"
+    HEADSIGNS_DELETE = "headsigns:delete"
 
 
 # ---------------------------------------------------------------------------

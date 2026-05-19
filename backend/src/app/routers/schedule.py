@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_session
-from app.models import Calendar, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
+from app.models import Calendar, Headsign, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
 from app.permissions import Permission, require
 
 router = APIRouter(prefix="/api/versions/{version_id}/schedule", tags=["schedule"])
@@ -646,7 +646,7 @@ class TripOut(BaseModel):
     service_id:            str | None
     direction_id:          int | None
     trip_short_name:       str | None
-    trip_headsign_id:      str | None
+    trip_headsign_id:      uuid.UUID | None
     block_id:              str | None
     shape_id:              str | None
     wheelchair_accessible: int | None
@@ -663,7 +663,7 @@ class TripCreate(BaseModel):
     service_id:            str | None = None
     direction_id:          int | None = None
     trip_short_name:       str | None = None
-    trip_headsign_id:      str | None = None
+    trip_headsign_id:      uuid.UUID | None = None
     block_id:              str | None = None
     shape_id:              str | None = None
     wheelchair_accessible: int | None = None
@@ -682,7 +682,7 @@ class TripUpdate(BaseModel):
     service_id:            str | None = None
     direction_id:          int | None = None
     trip_short_name:       str | None = None
-    trip_headsign_id:      str | None = None
+    trip_headsign_id:      uuid.UUID | None = None
     block_id:              str | None = None
     shape_id:              str | None = None
     wheelchair_accessible: int | None = None
@@ -705,7 +705,7 @@ class EmbeddedStopTimeOut(BaseModel):
     route_band_stop_id:  uuid.UUID
     arrival_time:        str | None
     departure_time:      str | None
-    stop_headsign_id:    str | None
+    stop_headsign_id:    uuid.UUID | None
     pickup_type:         int | None
     drop_off_type:       int | None
     continuous_pickup:   int | None
@@ -1383,7 +1383,7 @@ class StopTimeOut(BaseModel):
     route_band_stop_id:   uuid.UUID
     arrival_time:         str | None
     departure_time:       str | None
-    stop_headsign_id:     str | None
+    stop_headsign_id:     uuid.UUID | None
     pickup_type:          int | None
     drop_off_type:        int | None
     continuous_pickup:    int | None
@@ -1397,7 +1397,7 @@ class StopTimeOut(BaseModel):
 class StopTimeUpsert(BaseModel):
     arrival_time:        str | None = None
     departure_time:      str | None = None
-    stop_headsign_id:    str | None = None
+    stop_headsign_id:    uuid.UUID | None = None
     pickup_type:         int | None = None
     drop_off_type:       int | None = None
     continuous_pickup:   int | None = None
@@ -1532,3 +1532,35 @@ async def delete_stop_time(
     await _refresh_trip_hashes(version_id, trip_id, session)
     await session.commit()
 
+
+# ---------------------------------------------------------------------------
+# Headsigns (read-only, for assignment in schedule context)
+# ---------------------------------------------------------------------------
+
+class HeadsignRef(BaseModel):
+    id:          uuid.UUID
+    name:        str
+    number:      int | None
+    destination: str
+
+    model_config = {"from_attributes": True}
+
+
+@router.get(
+    "/headsigns",
+    response_model=list[HeadsignRef],
+    summary="List all headsigns available in this version",
+    dependencies=[require(Permission.SCHEDULE_READ)],
+)
+async def list_headsigns_for_schedule(
+    version_id: uuid.UUID,
+    _:          User         = Depends(get_current_user),
+    session:    AsyncSession = Depends(get_session),
+) -> list[HeadsignRef]:
+    await _get_version_or_404(version_id, session)
+    result = await session.execute(
+        select(Headsign)
+        .where(Headsign.version_id == version_id)
+        .order_by(Headsign.number.nulls_last(), Headsign.name)
+    )
+    return result.scalars().all()

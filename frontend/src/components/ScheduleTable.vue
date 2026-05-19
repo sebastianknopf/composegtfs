@@ -72,6 +72,7 @@ function createEmptyTrip() {
     short_name: '',
     day_type: '',
     route_path: '',
+    headsign_id: null,
     attributes: { wheelchair_accessible: null, bikes_allowed: null, cars_allowed: null },
     times: {},
     stopTimes: {},
@@ -84,6 +85,28 @@ const trips     = ref([])
 const dummyTrip = ref(createEmptyTrip())
 const shapeLabelById    = ref({})
 const shapeRouteTypeById = ref({})
+const headsigns          = ref([])
+const headsignLabelById  = ref({})
+const headsignOpen       = ref(null)  // tripId | 'dummy' | null
+
+const headsignItems = computed(() =>
+  headsigns.value.map(h => ({
+    id:    h.id,
+    label: h.name,
+  }))
+)
+
+async function loadHeadsigns() {
+  if (!props.versionId || !props.canRead) { headsigns.value = []; return }
+  try {
+    headsigns.value = await api.schedule.headsigns(props.versionId)
+    const next = { ...headsignLabelById.value }
+    for (const h of headsigns.value) next[h.id] = h.name
+    headsignLabelById.value = next
+  } catch {
+    headsigns.value = []
+  }
+}
 
 async function deleteTrip(trip) {
   if (!canMakeRequest('delete')) {
@@ -134,7 +157,7 @@ function onDummyInput(opts = {}) {
   nextTick(() => {
     const d = dummyTrip.value
     const hasContent =
-      d.short_name.trim() || d.day_type.trim() || d.route_path.trim() ||
+      d.short_name.trim() || d.day_type.trim() || d.route_path.trim() || d.headsign_id ||
       Object.values(d.attributes).some(v => v !== null) ||
       Object.values(d.times).some(v => (v ?? '').trim())
     if (!hasContent) return
@@ -194,11 +217,12 @@ async function loadTrips() {
         if (st.departure_time) {
           times[id] = normalizeTime(st.departure_time)
         }
-        if (st.arrival_time || st.pickup_type !== null || st.drop_off_type !== null) {
+        if (st.arrival_time || st.pickup_type !== null || st.drop_off_type !== null || st.stop_headsign_id) {
           stopTimes[id] = {
-            arrival_time:  normalizeTime(st.arrival_time) || null,
-            pickup_type:   st.pickup_type   ?? null,
-            drop_off_type: st.drop_off_type ?? null,
+            arrival_time:     normalizeTime(st.arrival_time) || null,
+            pickup_type:      st.pickup_type   ?? null,
+            drop_off_type:    st.drop_off_type ?? null,
+            stop_headsign_id: st.stop_headsign_id ?? null,
           }
         }
       }
@@ -209,6 +233,7 @@ async function loadTrips() {
         short_name: bt.trip_short_name ?? '',
         day_type:   bt.service_id ?? '',
         route_path: bt.shape_id ?? '',
+        headsign_id: bt.trip_headsign_id ?? null,
         attributes: {
           wheelchair_accessible: attrFromGtfs(bt.wheelchair_accessible),
           bikes_allowed:         attrFromGtfs(bt.bikes_allowed),
@@ -235,6 +260,7 @@ async function loadTrips() {
 
     trips.value = mapped
     await ensureShapeLabels(mapped.map(trip => trip.route_path).filter(Boolean))
+    ensureHeadsignLabels(mapped.map(trip => trip.headsign_id).filter(Boolean))
   } catch {
     if (key === _tripLoadKey) trips.value = []
   } finally {
@@ -261,6 +287,20 @@ async function ensureShapeLabels(shapeIds) {
   shapeRouteTypeById.value = nextRouteTypes
 }
 
+function ensureHeadsignLabels(headsignIds) {
+  const next = { ...headsignLabelById.value }
+  let changed = false
+  for (const id of headsignIds) {
+    if (next[id]) continue
+    const found = headsigns.value.find(h => h.id === id)
+    if (found) {
+      next[id] = found.name
+      changed = true
+    }
+  }
+  if (changed) headsignLabelById.value = next
+}
+
 // ---- Trip persistence helpers ----
 
 async function maybeSaveTrip(trip) {
@@ -273,6 +313,7 @@ async function maybeSaveTrip(trip) {
       direction_id:          props.direction,
       trip_short_name:       trip.short_name || null,
       shape_id:              trip.route_path || null,
+      trip_headsign_id:      trip.headsign_id || null,
       wheelchair_accessible: attrToGtfs(trip.attributes.wheelchair_accessible),
       bikes_allowed:         attrToGtfs(trip.attributes.bikes_allowed),
       cars_allowed:          attrToGtfs(trip.attributes.cars_allowed),
@@ -306,6 +347,7 @@ async function updateTripOnBackend(trip) {
       service_id:            trip.day_type || null,
       trip_short_name:       trip.short_name || null,
       shape_id:              trip.route_path || null,
+      trip_headsign_id:      trip.headsign_id || null,
       wheelchair_accessible: attrToGtfs(trip.attributes.wheelchair_accessible),
       bikes_allowed:         attrToGtfs(trip.attributes.bikes_allowed),
       cars_allowed:          attrToGtfs(trip.attributes.cars_allowed),
@@ -326,10 +368,11 @@ async function upsertStopTimeToBackend(trip, entryId) {
     await api.schedule.stopTimes.upsert(
       props.versionId, props.routeId, trip.tripId, entryId,
       {
-        departure_time: depTime,
-        arrival_time:   st.arrival_time  ?? null,
-        pickup_type:    st.pickup_type   ?? null,
-        drop_off_type:  st.drop_off_type ?? null,
+        departure_time:   depTime,
+        arrival_time:     st.arrival_time     ?? null,
+        pickup_type:      st.pickup_type      ?? null,
+        drop_off_type:    st.drop_off_type    ?? null,
+        stop_headsign_id: st.stop_headsign_id ?? null,
       },
     )
     await _refreshTripHash(trip)
@@ -431,11 +474,19 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => [props.versionId, props.canRead],
+  () => loadHeadsigns(),
+  { immediate: true },
+)
+
 watch(() => props.canRead, () => loadTrips())
 watch(() => props.versionId, () => {
   routePathSearchResults.value = []
   shapeLabelById.value     = {}
   shapeRouteTypeById.value = {}
+  headsignLabelById.value  = {}
+  headsigns.value          = []
 })
 
 // ---- Permission-based UI modes ----
@@ -579,8 +630,57 @@ function clearDummyRoutePath() {
   closeRoutePathDropdown()
 }
 
+// ---- Headsign flyout ----
+function openHeadsignDropdown(id) {
+  headsignOpen.value = id
+  nextTick(() => {
+    tableRef.value?.querySelector(`[data-hs-trip="${id}"] .sft-search`)?.focus()
+  })
+}
+function closeHeadsignDropdown() {
+  headsignOpen.value = null
+}
 
-// ---- Attributes flyout ----
+function selectDummyHeadsign(id) {
+  dummyTrip.value.headsign_id = id
+  if (id) {
+    const found = headsignItems.value.find(item => item.id === id)
+    if (found) headsignLabelById.value = { ...headsignLabelById.value, [id]: found.label }
+  }
+  closeHeadsignDropdown()
+  onDummyInput({ fieldName: 'headsign_id' })
+}
+
+function onTripHeadsignChange(trip, value) {
+  trip.headsign_id = value
+  const found = headsignItems.value.find(item => item.id === value)
+  if (found) headsignLabelById.value = { ...headsignLabelById.value, [value]: found.label }
+  closeHeadsignDropdown()
+  if (trip.saved) {
+    updateTripOnBackend(trip)
+  } else {
+    maybeSaveTrip(trip)
+  }
+}
+
+function clearTripHeadsign(trip) {
+  trip.headsign_id = null
+  closeHeadsignDropdown()
+  if (trip.saved) {
+    updateTripOnBackend(trip)
+  }
+}
+
+function clearDummyHeadsign() {
+  dummyTrip.value.headsign_id = null
+  closeHeadsignDropdown()
+}
+
+// ---- Stop-time headsign indicator helper ----
+function hasStopHeadsign(trip, entryId) {
+  return !!(trip.stopTimes?.[entryId]?.stop_headsign_id)
+}
+
 const attrOpen = ref(null)  // tripId | 'dummy' | null
 
 function openAttrDropdown(id)  { attrOpen.value = id }
@@ -840,7 +940,7 @@ const contextMenuRef     = ref(null)
 
 function getStopTime(trip, entryId) {
   if (!trip.stopTimes[entryId]) {
-    trip.stopTimes[entryId] = { arrival_time: null, pickup_type: null, drop_off_type: null }
+    trip.stopTimes[entryId] = { arrival_time: null, pickup_type: null, drop_off_type: null, stop_headsign_id: null }
   }
   return trip.stopTimes[entryId]
 }
@@ -849,22 +949,47 @@ function getActiveTrip() {
   return trips.value.find(t => t.id === contextMenuTripId.value) ?? null
 }
 
-function openContextMenu(tripId, entryId, event) {
+async function openContextMenu(tripId, entryId, event) {
   event.preventDefault()
   const cell = event.currentTarget
   const scrollEl = cell.closest('.schedule-table-scroll')
   const cellRect   = cell.getBoundingClientRect()
   const scrollRect = scrollEl ? scrollEl.getBoundingClientRect() : { top: 0, left: 0 }
+  const scrollTop  = scrollEl?.scrollTop  ?? 0
+  const scrollLeft = scrollEl?.scrollLeft ?? 0
   contextMenuTripId.value  = tripId
   contextMenuEntryId.value = entryId
+  // Default: below the cell, left-aligned with the cell
   contextMenuPos.value = {
-    top:  cellRect.bottom - scrollRect.top  + (scrollEl?.scrollTop  ?? 0),
-    left: cellRect.left   - scrollRect.left + (scrollEl?.scrollLeft ?? 0),
+    top:  cellRect.bottom - scrollRect.top  + scrollTop,
+    left: cellRect.left   - scrollRect.left + scrollLeft,
   }
-  nextTick(() => {
-    // Focus the arrival input so focusout-to-close works correctly
-    contextMenuRef.value?.$el?.querySelector('.stcm__arrival-input')?.focus()
-  })
+
+  await nextTick()
+
+  // Smart flip: measure popup and flip if it overflows the viewport
+  const menuEl = contextMenuRef.value?.$el
+  if (menuEl) {
+    const menuRect = menuEl.getBoundingClientRect()
+    const margin   = 8
+    let { top, left } = contextMenuPos.value
+
+    // Flip left if right edge overflows viewport
+    if (menuRect.right > window.innerWidth - margin) {
+      left = cellRect.right - scrollRect.left + scrollLeft - menuRect.width
+    }
+    // Flip up if bottom edge overflows viewport
+    if (menuRect.bottom > window.innerHeight - margin) {
+      top = cellRect.top - scrollRect.top + scrollTop - menuRect.height
+    }
+    // Clamp to avoid scrolling out of the container's visible area
+    top  = Math.max(scrollTop, top)
+    left = Math.max(scrollLeft, left)
+
+    contextMenuPos.value = { top, left }
+  }
+
+  contextMenuRef.value?.$el?.querySelector('.stcm__arrival-input')?.focus()
 }
 
 function closeContextMenu() {
@@ -983,6 +1108,14 @@ function isTripValid(trip) {
   return hasDayType && timeCount >= 2
 }
 
+// Returns a warning title string when a valid trip is missing required data, empty string otherwise.
+function tripWarningTitle(trip) {
+  if (!trip.route_path?.trim()) return t('schedule.trip_missing_route_path_warning')
+  if (trip.route_path !== trip.geo_pattern_hash) return t('schedule.trip_route_path_mismatch_warning')
+  if (!trip.headsign_id) return t('schedule.trip_missing_headsign_warning')
+  return ''
+}
+
 // ---- Expose public methods for parent components ----
 // Trips visible after applying the day-type filter (empty filterServiceIds = show all)
 const visibleTrips = computed(() => {
@@ -1040,9 +1173,9 @@ defineExpose({
                     :title="t('schedule.trip_invalid_warning')"
                   >warning</md-icon>
                   <md-icon
-                    v-else-if="isTripValid(trip) && (!(trip.route_path ?? '').trim() || (trip.route_path && trip.route_path !== trip.geo_pattern_hash))"
+                    v-else-if="tripWarningTitle(trip)"
                     class="schedule-table__trip-warning-route"
-                    :title="trip.route_path ? t('schedule.trip_route_path_mismatch_warning') : t('schedule.trip_missing_route_path_warning')"
+                    :title="tripWarningTitle(trip)"
                   >warning</md-icon>
                   <label class="schedule-table__trip-select-label" :title="t('schedule.select_trip')" @click.stop>
                     <input
@@ -1203,7 +1336,68 @@ defineExpose({
               <td class="schedule-table__filler-cell" />
             </tr>
 
-            <!-- Row 5: Attributes -->
+            <!-- Row 5: Headsign -->
+            <tr class="schedule-table__header-row">
+              <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_headsign') }}</th>
+              <td
+                v-for="trip in visibleTrips"
+                :key="trip.id + '-hs'"
+                class="schedule-table__trip-input-cell schedule-table__trip-input-cell--dt"
+              >
+                <div :data-hs-trip="trip.id">
+                  <ScheduleTableFlyout
+                    :model-value="trip.headsign_id ?? ''"
+                    :value-label="trip.headsign_id ? (headsignLabelById[trip.headsign_id] || trip.headsign_id) : ''"
+                    :items="headsignItems"
+                    placeholder="—"
+                    :search-placeholder="t('schedule.headsign_search')"
+                    :open="headsignOpen === trip.id"
+                    :disabled="readonlyMode"
+                    :readonly="readonlyMode"
+                    @update:model-value="(v) => onTripHeadsignChange(trip, v)"
+                    @open="openHeadsignDropdown(trip.id)"
+                    @close="closeHeadsignDropdown"
+                  >
+                    <template #empty>{{ t('schedule.add_stop_no_results') }}</template>
+                    <template v-if="props.canWrite" #footer>
+                      <button class="schedule-table__map-btn schedule-table__map-btn--danger" type="button" @mousedown.prevent @click.stop="clearTripHeadsign(trip)">
+                        <md-icon>delete</md-icon>
+                        {{ t('schedule.headsign_delete') }}
+                      </button>
+                    </template>
+                  </ScheduleTableFlyout>
+                </div>
+              </td>
+              <template v-if="props.canWrite && bandEntries.length > 0">
+                <td class="schedule-table__trip-input-cell schedule-table__trip-input-cell--dummy schedule-table__trip-input-cell--dt">
+                  <div data-hs-trip="dummy">
+                    <ScheduleTableFlyout
+                      :model-value="dummyTrip.headsign_id ?? ''"
+                      :value-label="dummyTrip.headsign_id ? (headsignLabelById[dummyTrip.headsign_id] || dummyTrip.headsign_id) : ''"
+                      :items="headsignItems"
+                      :placeholder="t('schedule.trip_placeholder')"
+                      :search-placeholder="t('schedule.headsign_search')"
+                      :open="headsignOpen === 'dummy'"
+                      :is-ghost="true"
+                      @update:model-value="selectDummyHeadsign"
+                      @open="openHeadsignDropdown('dummy')"
+                      @close="closeHeadsignDropdown"
+                    >
+                      <template #empty>{{ t('schedule.add_stop_no_results') }}</template>
+                      <template #footer>
+                        <button class="schedule-table__map-btn schedule-table__map-btn--danger" type="button" @mousedown.prevent @click.stop="clearDummyHeadsign">
+                          <md-icon>delete</md-icon>
+                          {{ t('schedule.headsign_delete') }}
+                        </button>
+                      </template>
+                    </ScheduleTableFlyout>
+                  </div>
+                </td>
+              </template>
+              <td class="schedule-table__filler-cell" />
+            </tr>
+
+            <!-- Row 6: Attributes -->
             <tr class="schedule-table__header-row">
               <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_attributes') }}</th>
               <td
@@ -1350,6 +1544,15 @@ defineExpose({
                     :class="{ 'schedule-table__stop-ind--none': dropOffIsNone(trip, entry.id) }"
                   >arrow_downward</md-icon>
                 </span>
+
+                <!-- Stop-time headsign indicator (purely decorative, no click) -->
+                <span
+                  v-if="hasStopHeadsign(trip, entry.id)"
+                  class="schedule-table__hs-ind"
+                  :title="headsignLabelById[trip.stopTimes[entry.id].stop_headsign_id] || '—'"
+                >
+                  <md-icon>directions_bus</md-icon>
+                </span>
               </td>
               <!-- Dummy time cell -->
               <template v-if="props.canWrite && bandEntries.length > 0">
@@ -1430,12 +1633,13 @@ defineExpose({
         :departure-time="getActiveTrip()?.times[contextMenuEntryId] ?? ''"
         :open="true"
         :disabled="readonlyMode"
+        :headsigns="headsigns"
         :style="{ position: 'absolute', top: contextMenuPos.top + 'px', left: contextMenuPos.left + 'px' }"
         @update:model-value="v => updateStopTime(getActiveTrip(), contextMenuEntryId, v)"
         @close="closeContextMenu"
       />
 
-      <!-- Trip column context menu entfernt -->
+      <!-- (stop-time headsign selection is now inside the ScheduleTimeContextMenu popup) -->
     </template>
 
     <!-- Delete confirmation -->
@@ -2157,5 +2361,22 @@ tbody .schedule-table__filler-cell {
 .schedule-table__map-btn md-icon {
   --md-icon-size: 1rem;
   font-size: 1rem;
+}
+
+/* ---- Stop-time headsign indicator (same height as stop-indicators, left side) ---- */
+.schedule-table__hs-ind {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+  color: var(--md-sys-color-primary, #1f69e0);
+}
+
+.schedule-table__hs-ind md-icon {
+  --md-icon-size: 0.9rem;
+  font-size: 0.9rem;
 }
 </style>

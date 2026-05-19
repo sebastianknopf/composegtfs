@@ -35,6 +35,7 @@ export default {
   views: {
     agency: 'Unternehmen',
     calendar: 'Kalender',
+    headsigns: 'Zieltexte',
     accounts: 'Accounts',
     settings: 'Einstellungen',
     network: 'Netz',
@@ -148,6 +149,7 @@ export default {
     section_schedule: 'Fahrplan',
     item_agencies: 'Unternehmen',
     item_day_types: 'Tagesarten',
+    item_headsigns: 'Zieltexte',
     item_stops: 'Haltestellen',
     item_routes: 'Linien',
     item_shapes: 'Fahrwege',
@@ -204,6 +206,7 @@ export default {
     log: {
       trips_found:            '{count} Fahrt(en) für den Export gefunden.',
       trip_no_shape:          'Fahrt {trip_id} hat keinen zugewiesenen Fahrweg.',
+      trip_no_headsign:        'Fahrt {trip_id} hat keinen zugewiesenen Zieltext.',
       trip_shape_mismatch:    'Fahrt {trip_id} hat einen Fahrweg, der nicht zur Haltestellenfolge der Fahrt passt.',
       no_valid_calendar_days: 'Im gewählten Zeitraum wurden keine gültigen Kalendertage gefunden.',
       no_routes_found:        'Keine passenden Linien gefunden — leeres Archiv wird erstellt.',
@@ -291,6 +294,31 @@ export default {
       asc: 'Aufsteigend sortieren',
       desc: 'Absteigend sortieren',
     },
+  },
+  headsigns: {
+    add: 'Neuer Zieltext',
+    no_items: 'Keine Zieltexte gefunden.',
+    no_version_selected: 'Bitte zuerst eine Version wählen.',
+    column_number: 'Nummer',
+    column_name: 'Name',
+    column_destination: 'Zieltext',
+    edit_title_create: 'Neuer Zieltext',
+    edit_title_edit: 'Zieltext bearbeiten',
+    section_identification: 'Identifikation',
+    section_display: 'Anzeigetext',
+    field_name: 'Name',
+    field_number: 'Nummer',
+    field_destination: 'Zieltext',
+    validation_name_required: 'Bitte einen Namen eingeben.',
+    validation_name_too_long: 'Name darf maximal 255 Zeichen lang sein.',
+    validation_destination_required: 'Bitte einen Zieltext eingeben.',
+    validation_destination_too_long: 'Zieltext darf maximal 255 Zeichen lang sein.',
+    validation_number_too_long: 'Nummer darf maximal 10 Stellen haben.',
+    validation_number_not_numeric: 'Nummer darf nur Ziffern enthalten.',
+    error_conflict: 'Ein Zieltext mit diesem Namen existiert bereits in dieser Version.',
+    error_not_found: 'Der Zieltext wurde nicht gefunden oder wurde bereits gelöscht.',
+    delete_confirm_title: 'Zieltext löschen',
+    delete_confirm_message: 'Soll der Zieltext „{name}“ wirklich gelöscht werden? Diese Aktion kann nicht rükgängig gemacht werden.',
   },
   accounts: {
     tab_users: 'Accounts',
@@ -513,6 +541,7 @@ export default {
     error_generic:   'Ein unerwarteter Fehler ist aufgetreten.',
     error_min_stops: 'Zum Speichern sind mindestens 2 Steige erforderlich.',
     error_duplicate: 'Ein Fahrweg mit derselben Haltestellenfolge existiert bereits in dieser Version.',
+    validation_name_required: 'Bitte gib einen Namen ein.',
   },
   color_picker: {
     open:         'Farbe wählen',
@@ -537,6 +566,7 @@ export default {
       routes: 'Linien',
       shapes: 'Fahrwege',
       gtfs:   'GTFS',
+      headsigns: 'Fahrtziele',
     },
     accounts: {
       read:          'Accounts ansehen',
@@ -595,7 +625,12 @@ export default {
     },
     gtfs: {
       export: 'GTFS-Export durchführen',
-    }
+    },
+    headsigns: {
+      read:   'Fahrtziele ansehen',
+      write:  'Fahrtziele bearbeiten',
+      delete: 'Fahrtziele löschen',
+    },
   },
   schedule: {
     no_version:           'Keine Version gewählt.',
@@ -617,11 +652,14 @@ export default {
     trip_short_name: 'Kurzname',
     trip_day_type:   'Tagesart',
     trip_route_path: 'Fahrweg',
+    trip_headsign:   'Zieltext',
     trip_attributes: 'Attribute',
     trip_placeholder: 'Neue Fahrt …',
     day_type_search:   'Tagesart suchen …',
     route_path_search: 'Fahrweg suchen …',
     route_path_delete: 'Fahrweg zurücksetzen',
+    headsign_search: 'Zieltext suchen …',
+    headsign_delete: 'Zieltext zurücksetzen',
     attr_barrier_free: 'Barrierefrei',
     attr_bikes:        'Fahrradmitnahme',
     attr_cars:         'Automitnahme',
@@ -643,6 +681,7 @@ export default {
     trip_invalid_warning:'Fehlende Tagesart oder zu wenig Abfahrtszeiten',
     trip_missing_route_path_warning: 'Fahrweg nicht gesetzt',
     trip_route_path_mismatch_warning: 'Fahrweg passt nicht zur Fahrt',
+    trip_missing_headsign_warning: 'Zieltext nicht gesetzt',
     error_save_trip:      'Fahrt konnte nicht gespeichert werden.',
     error_delete_trip:    'Fahrt konnte nicht gelöscht werden.',
     delete_trips_confirm: 'Wollen Sie die {count} Fahrt(en) wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden!',
@@ -713,3 +752,4 @@ export default {
     },
   },
 }
+

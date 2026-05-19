@@ -101,6 +101,7 @@ class Version(Base):
     route_band_stops = relationship("RouteBandStop", back_populates="version", cascade="all, delete-orphan")
     shapes = relationship("Shape", back_populates="version", cascade="all, delete-orphan")
     trips = relationship("Trip", back_populates="version", cascade="all, delete-orphan")
+    headsigns = relationship("Headsign", back_populates="version", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +442,7 @@ class Trip(Base):
     service_id            = Column(String(255), nullable=True)   # calendar ref; no DB FK (see above)
     direction_id          = Column(SmallInteger, nullable=True)  # 0 = outbound, 1 = inbound
     trip_short_name       = Column(String(255), nullable=True)
-    trip_headsign_id      = Column(String(255), nullable=True)   # placeholder; FK added later
+    trip_headsign_id      = Column(UUID(as_uuid=True), ForeignKey("headsigns.id", ondelete="SET NULL"), nullable=True)
     block_id              = Column(String(255), nullable=True)
     shape_id              = Column(String(255), nullable=True)
 
@@ -492,7 +493,7 @@ class StopTime(Base):
     arrival_time   = Column(String(8), nullable=True)   # NULL → same as departure
     departure_time = Column(String(8), nullable=True)   # NULL → not yet entered
 
-    stop_headsign_id      = Column(String(255), nullable=True)  # placeholder; FK added later
+    stop_headsign_id      = Column(UUID(as_uuid=True), ForeignKey("headsigns.id", ondelete="SET NULL"), nullable=True)
     pickup_type           = Column(SmallInteger, nullable=True)
     drop_off_type         = Column(SmallInteger, nullable=True)
     continuous_pickup     = Column(SmallInteger, nullable=True)
@@ -510,4 +511,25 @@ class StopTime(Base):
             name="fk_stop_times_trip",
             ondelete="CASCADE",
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Headsigns  — display text shown on a vehicle, scoped to a Version
+# ---------------------------------------------------------------------------
+
+class Headsign(Base):
+    __tablename__ = "headsigns"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version_id = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), nullable=False)
+
+    name        = Column(String(255), nullable=False)
+    number      = Column(Integer,     nullable=True)
+    destination = Column(String(255), nullable=False)
+
+    version = relationship("Version", back_populates="headsigns")
+
+    __table_args__ = (
+        UniqueConstraint("version_id", "name", name="uq_headsigns_version_name"),
     )

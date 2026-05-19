@@ -54,12 +54,14 @@ const nameValue        = ref('')
 const descriptionValue = ref('')
 const routeTypeValue   = ref('')
 const autoRouteActive  = ref(false)
+const nameError        = ref(null)
 
 function populateForm(shape) {
   nameValue.value        = shape?.shape_name           ?? ''
   descriptionValue.value = shape?.description          ?? ''
   routeTypeValue.value   = shape?.route_type != null   ? String(shape.route_type) : ''
   autoRouteActive.value  = shape?.is_autoroute_active  ?? false
+  nameError.value        = null
 }
 
 watch(() => props.shape,      (shape) => { populateForm(shape) }, { immediate: true })
@@ -123,6 +125,11 @@ function handleCancel() {
 
 function handleSave() {
   if (props.readonly || !props.canWrite) return
+  if (!nameValue.value.trim()) {
+    nameError.value = t('shapes.validation_name_required')
+    return
+  }
+  nameError.value = null
   const rt = routeTypeValue.value.trim()
   emit('save', {
     shape_name:          nameValue.value.trim()        || null,
@@ -158,7 +165,9 @@ function handleDelete() {
             :label="t('shapes.field_name')"
             :value="nameValue"
             :disabled="readonly"
-            @input="nameValue = $event.target.value"
+            :error="!!nameError"
+            :error-text="nameError ?? ''"
+            @input="nameValue = $event.target.value; nameError = null"
           />
           <md-outlined-text-field
             type="textarea"

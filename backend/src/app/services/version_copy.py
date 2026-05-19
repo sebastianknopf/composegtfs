@@ -31,6 +31,7 @@ from app.models import (
     AuxCalendarDate,
     Calendar,
     CalendarAuxCalendar,
+    Headsign,
     Route,
     RouteBandStop,
     Shape,
@@ -58,6 +59,7 @@ async def run_copy(
     include_routes: bool,
     include_route_bands: bool,
     include_schedule: bool,
+    include_headsigns: bool,
     session: AsyncSession,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Copy version data and stream status events.
@@ -97,8 +99,11 @@ async def run_copy(
                 await _copy_routes(session, source_version_id, new_vid)
             if include_route_bands:
                 rbs_id_map = await _copy_route_bands(session, source_version_id, new_vid)
+            headsign_id_map: dict[uuid.UUID, uuid.UUID] = {}
+            if include_headsigns or include_schedule:
+                headsign_id_map = await _copy_headsigns(session, source_version_id, new_vid)
             if include_schedule:
-                await _copy_schedule(session, source_version_id, new_vid, rbs_id_map)
+                await _copy_schedule(session, source_version_id, new_vid, rbs_id_map, headsign_id_map)
 
             await session.commit()
             await session.refresh(target_version)
@@ -145,8 +150,11 @@ async def run_copy(
                 # so that stop_times for newly copied trips can reference the
                 # correct band stop entries in the target.
                 rbs_id_map = await _get_src_to_dst_rbs_map(session, source_version_id, new_vid)
+            headsign_id_map: dict[uuid.UUID, uuid.UUID] = {}
+            if include_headsigns or include_schedule:
+                headsign_id_map = await _merge_headsigns(session, source_version_id, new_vid)
             if include_schedule:
-                await _merge_schedule(session, source_version_id, new_vid, rbs_id_map)
+                await _merge_schedule(session, source_version_id, new_vid, rbs_id_map, headsign_id_map)
 
             await session.commit()
             await session.refresh(target_version)
@@ -448,11 +456,74 @@ async def _merge_shapes(
             ))
 
 
+async def _copy_headsigns(
+    session: AsyncSession,
+    src_vid: uuid.UUID,
+    dst_vid: uuid.UUID,
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Copy all headsigns and return old_id → new_id mapping."""
+    headsign_id_map: dict[uuid.UUID, uuid.UUID] = {}
+    rows = (
+        await session.execute(select(Headsign).where(Headsign.version_id == src_vid))
+    ).scalars().all()
+    for h in rows:
+        new_id = uuid.uuid4()
+        headsign_id_map[h.id] = new_id
+        session.add(Headsign(
+            id=new_id,
+            version_id=dst_vid,
+            name=h.name,
+            number=h.number,
+            destination=h.destination,
+        ))
+    await session.flush()
+    return headsign_id_map
+
+
+async def _merge_headsigns(
+    session: AsyncSession,
+    src_vid: uuid.UUID,
+    dst_vid: uuid.UUID,
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Merge headsigns by name; return src_id → dst_id mapping for all src headsigns.
+
+    Headsigns that already exist in the destination (matched by name) are reused
+    and their dst ID is placed in the map.  New headsigns are created.
+    """
+    dst_by_name: dict[str, uuid.UUID] = {
+        h.name: h.id
+        for h in (
+            await session.execute(select(Headsign).where(Headsign.version_id == dst_vid))
+        ).scalars().all()
+    }
+    headsign_id_map: dict[uuid.UUID, uuid.UUID] = {}
+    src_rows = (
+        await session.execute(select(Headsign).where(Headsign.version_id == src_vid))
+    ).scalars().all()
+    for h in src_rows:
+        if h.name in dst_by_name:
+            headsign_id_map[h.id] = dst_by_name[h.name]
+        else:
+            new_id = uuid.uuid4()
+            headsign_id_map[h.id] = new_id
+            dst_by_name[h.name] = new_id
+            session.add(Headsign(
+                id=new_id,
+                version_id=dst_vid,
+                name=h.name,
+                number=h.number,
+                destination=h.destination,
+            ))
+    await session.flush()
+    return headsign_id_map
+
+
 async def _copy_schedule(
     session: AsyncSession,
     src_vid: uuid.UUID,
     dst_vid: uuid.UUID,
     rbs_id_map: dict[uuid.UUID, uuid.UUID],
+    headsign_id_map: dict[uuid.UUID, uuid.UUID] | None = None,
 ) -> None:
     """Copy trips and stop_times."""
     # Trips
@@ -467,7 +538,7 @@ async def _copy_schedule(
             service_id=t.service_id,
             direction_id=t.direction_id,
             trip_short_name=t.trip_short_name,
-            trip_headsign_id=t.trip_headsign_id,
+            trip_headsign_id=headsign_id_map.get(t.trip_headsign_id) if (headsign_id_map and t.trip_headsign_id) else None,
             block_id=t.block_id,
             shape_id=t.shape_id,
             wheelchair_accessible=t.wheelchair_accessible,
@@ -498,7 +569,7 @@ async def _copy_schedule(
             route_band_stop_id=new_rbs_id,
             arrival_time=st.arrival_time,
             departure_time=st.departure_time,
-            stop_headsign_id=st.stop_headsign_id,
+            stop_headsign_id=headsign_id_map.get(st.stop_headsign_id) if (headsign_id_map and st.stop_headsign_id) else None,
             pickup_type=st.pickup_type,
             drop_off_type=st.drop_off_type,
             continuous_pickup=st.continuous_pickup,
@@ -907,6 +978,7 @@ async def _merge_schedule(
     src_vid: uuid.UUID,
     dst_vid: uuid.UUID,
     rbs_id_map: dict[uuid.UUID, uuid.UUID],
+    headsign_id_map: dict[uuid.UUID, uuid.UUID] | None = None,
 ) -> None:
     """Merge trips and stop_times that do not yet exist in target."""
     # Trips
@@ -929,7 +1001,7 @@ async def _merge_schedule(
                 service_id=t.service_id,
                 direction_id=t.direction_id,
                 trip_short_name=t.trip_short_name,
-                trip_headsign_id=t.trip_headsign_id,
+                trip_headsign_id=headsign_id_map.get(t.trip_headsign_id) if (headsign_id_map and t.trip_headsign_id) else None,
                 block_id=t.block_id,
                 shape_id=t.shape_id,
                 wheelchair_accessible=t.wheelchair_accessible,
@@ -963,7 +1035,7 @@ async def _merge_schedule(
             route_band_stop_id=new_rbs_id,
             arrival_time=st.arrival_time,
             departure_time=st.departure_time,
-            stop_headsign_id=st.stop_headsign_id,
+            stop_headsign_id=headsign_id_map.get(st.stop_headsign_id) if (headsign_id_map and st.stop_headsign_id) else None,
             pickup_type=st.pickup_type,
             drop_off_type=st.drop_off_type,
             continuous_pickup=st.continuous_pickup,

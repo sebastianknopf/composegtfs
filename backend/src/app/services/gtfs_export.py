@@ -38,6 +38,7 @@ import logging
 import math
 import uuid
 import zipfile
+import zlib
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import AsyncGenerator
@@ -50,6 +51,7 @@ from app.models import (
     AuxCalendarDate,
     Calendar,
     CalendarAuxCalendar,
+    Headsign,
     Route,
     RouteBandStop,
     Shape,
@@ -127,6 +129,11 @@ def _format_gtfs_time(t: str | None) -> str:
     if len(parts) == 2:
         return f"{parts[0]}:{parts[1]}:00"
     return t  # already hh:mm:ss or longer
+
+
+def _shorten_shape_id(shape_id: str) -> str:
+    """Returns an 8-character lowercase hex CRC32 of the shape_id."""
+    return format(zlib.crc32(shape_id.encode()) & 0xFFFFFFFF, '08x')
 
 
 def _project_stop_on_shape(
@@ -468,6 +475,14 @@ async def run_export(
     all_route_band_stops = all_rbs_q.scalars().all()
     referenced_stop_ids: set[str] = {rbs.stop_id for rbs in all_route_band_stops}
 
+    # Headsigns — build id → destination text lookup
+    hs_q = await session.execute(
+        select(Headsign).where(Headsign.version_id == version_id)
+    )
+    headsign_map: dict[uuid.UUID, str] = {
+        h.id: h.destination for h in hs_q.scalars().all()
+    }
+
     # Stop times with route band entries (join via route_band_stop_id)
     st_rows: list = []
     if trip_ids_set:
@@ -550,6 +565,24 @@ async def run_export(
                 yield _log("MiddlePrio", "trip_no_shape", {"trip_id": t.trip_id})
             elif t.geo_pattern_hash and t.geo_pattern_hash != t.shape_id:
                 yield _log("MiddlePrio", "trip_shape_mismatch", {"trip_id": t.trip_id})
+
+    # Warn about trips without an assigned headsign
+    for t in trips:
+        if not t.trip_headsign_id:
+            yield _log("MiddlePrio", "trip_no_headsign", {"trip_id": t.trip_id})
+
+    # Build short shape ID mapping (8-char CRC32 hex), with salt-based collision resolution
+    shape_id_map: dict[str, str] = {}  # original shape_id → short shape_id
+    _short_to_orig: dict[str, str] = {}
+    for _sid in sorted(shape_ids_set):  # sorted for determinism
+        _short = _shorten_shape_id(_sid)
+        _salt = 0
+        while _short in _short_to_orig:
+            _salt += 1
+            _short = _shorten_shape_id(f"{_sid}\x00{_salt}")
+            logger.warning("Shape ID CRC32 collision for %s (resolved with salt %d)", _sid, _salt)
+        _short_to_orig[_short] = _sid
+        shape_id_map[_sid] = _short
 
     yield _log("Info", "trips_found", {"count": len(trips)})
 
@@ -658,7 +691,7 @@ async def run_export(
                     pts, cum = shape_data[sh.shape_id]
                     for seq, ((plat, plon), dist) in enumerate(zip(pts, cum), start=1):
                         w.writerow([
-                            sh.shape_id,
+                            shape_id_map.get(sh.shape_id, sh.shape_id),
                             f"{plat:.6f}", f"{plon:.6f}",
                             seq,
                             f"{dist:.2f}",
@@ -677,11 +710,11 @@ async def run_export(
             for t in trips:
                 w.writerow([
                     t.route_id, t.service_id or "", t.trip_id,
-                    t.trip_headsign_id or "",
+                    headsign_map.get(t.trip_headsign_id, "") if t.trip_headsign_id else "",
                     t.trip_short_name or "",
                     "" if t.direction_id is None else str(t.direction_id),
                     t.block_id or "",
-                    (t.shape_id or "") if export_shapes else "",
+                    (shape_id_map.get(t.shape_id, t.shape_id) if t.shape_id else "") if export_shapes else "",
                     "" if t.wheelchair_accessible is None else str(t.wheelchair_accessible),
                     "" if t.bikes_allowed is None else str(t.bikes_allowed),
                 ])
@@ -763,7 +796,7 @@ async def run_export(
                 w.writerow([
                     st.trip_id, arr, dep,
                     rbs.stop_id, _seq_counter,
-                    st.stop_headsign_id or "",
+                    headsign_map.get(st.stop_headsign_id, "") if st.stop_headsign_id else "",
                     "" if st.pickup_type is None else str(st.pickup_type),
                     "" if st.drop_off_type is None else str(st.drop_off_type),
                     "" if st.continuous_pickup is None else str(st.continuous_pickup),

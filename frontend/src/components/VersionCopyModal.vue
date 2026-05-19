@@ -50,6 +50,7 @@ const nameError = ref(null)
 const checks = reactive({
   agencies:    false,
   day_types:   false,
+  headsigns:   false,
   stops:       false,
   shapes:      false,
   routes:      false,
@@ -73,6 +74,7 @@ const forced = computed(() => {
     f.add('route_bands')
     f.add('day_types')
     f.add('shapes')
+    f.add('headsigns')
   }
   return f
 })
@@ -172,6 +174,7 @@ async function handleSubmit() {
     include: {
       agencies:    isChecked('agencies'),
       day_types:   isChecked('day_types'),
+      headsigns:   isChecked('headsigns'),
       stops:       isChecked('stops'),
       shapes:      isChecked('shapes'),
       routes:      isChecked('routes'),
@@ -316,6 +319,14 @@ async function handleSubmit() {
               @change="toggle('day_types', $event.target.checked)"
             />
             <span>{{ t('version_copy.item_day_types') }}</span>
+          </label>
+          <label class="version-copy-dialog__check-item">
+            <md-checkbox
+              :checked="isChecked('headsigns')"
+              :disabled="isDisabled('headsigns')"
+              @change="toggle('headsigns', $event.target.checked)"
+            />
+            <span>{{ t('version_copy.item_headsigns') }}</span>
           </label>
         </div>
       </div>

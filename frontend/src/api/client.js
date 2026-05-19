@@ -212,6 +212,7 @@ export const api = {
       upsert: (versionId, routeId, tripId, routeBandStopId, data) => request('PUT',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`, data),
       delete: (versionId, routeId, tripId, routeBandStopId)       => request('DELETE', `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`),
     },
+    headsigns: (versionId) => request('GET', `/versions/${versionId}/schedule/headsigns`),
     shapes: {
       search: (versionId, query = '', limit = 50, routeType = null) => {
         let url = `/versions/${versionId}/schedule/shapes?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`
@@ -280,6 +281,14 @@ export const api = {
     create: (versionId, data)          => request('POST',  `/versions/${versionId}/shapes`, data),
     update: (versionId, shapeId, data) => request('PATCH', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`, data),
     delete: (versionId, shapeId)       => request('DELETE', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`),
+  },
+
+  headsigns: {
+    list:   (versionId)           => request('GET',    `/versions/${versionId}/headsigns`),
+    create: (versionId, data)     => request('POST',   `/versions/${versionId}/headsigns`, data),
+    get:    (versionId, id)       => request('GET',    `/versions/${versionId}/headsigns/${id}`),
+    update: (versionId, id, data) => request('PATCH',  `/versions/${versionId}/headsigns/${id}`, data),
+    delete: (versionId, id)       => request('DELETE', `/versions/${versionId}/headsigns/${id}`),
   },
 
   gtfsExport: {

@@ -67,6 +67,7 @@ class VersionsReorderRequest(BaseModel):
 class CopyIncludes(BaseModel):
     agencies:     bool = False
     day_types:    bool = False
+    headsigns:    bool = False
     stops:        bool = False
     shapes:       bool = False
     routes:       bool = False
@@ -277,6 +278,7 @@ async def copy_version(
             target_version_id=body.target_version_id,
             include_agencies=body.include.agencies,
             include_day_types=body.include.day_types,
+            include_headsigns=body.include.headsigns,
             include_stops=body.include.stops,
             include_shapes=body.include.shapes,
             include_routes=body.include.routes,

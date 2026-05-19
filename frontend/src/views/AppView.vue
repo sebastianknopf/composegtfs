@@ -35,8 +35,9 @@ const sections = [
     icon: 'storage',
     defaultView: 'agency',
     views: [
-      { id: 'agency',    labelKey: 'views.agency',    icon: 'business',      position: 'top' },
-      { id: 'calendar',  labelKey: 'views.calendar',  icon: 'calendar_month', position: 'top' },
+      { id: 'agency',    labelKey: 'views.agency',    icon: 'business',        position: 'top' },
+      { id: 'calendar',  labelKey: 'views.calendar',  icon: 'calendar_month',  position: 'top' },
+      { id: 'headsigns', labelKey: 'views.headsigns', icon: 'directions_bus',  position: 'top', permission: 'headsigns:read' },
       { id: 'accounts', labelKey: 'views.accounts', icon: 'group',     position: 'bottom', permission: 'accounts:read' },
       { id: 'settings', labelKey: 'views.settings', icon: 'settings',  position: 'bottom', permission: 'settings:read' },
     ],
