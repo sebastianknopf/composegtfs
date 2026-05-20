@@ -3,28 +3,28 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth import SlidingTokenMiddleware
-from app.config import settings
+from composegtfs.auth import SlidingTokenMiddleware
+from composegtfs.config import settings
 
 try:
-    from app._version import version as _app_version
+    from composegtfs._version import version as _app_version
 except ImportError:
     _app_version = "0.0.0.dev0"
-from app.routers import auth as auth_router
-from app.routers import groups as groups_router
-from app.routers import permissions as permissions_router
-from app.routers import settings as settings_router
-from app.routers import users as users_router
-from app.routers import versions as versions_router
-from app.routers import agencies as agencies_router
-from app.routers.calendars import aux_calendars_router, calendars_router
-from app.routers import stops as stops_router
-from app.routers import routes as routes_router
-from app.routers import schedule as schedule_router
-from app.routers import routing as routing_router
-from app.routers import gtfs_export as gtfs_export_router
-from app.routers import shapes as shapes_router
-from app.routers import headsigns as headsigns_router
+from composegtfs.routers import auth as auth_router
+from composegtfs.routers import groups as groups_router
+from composegtfs.routers import permissions as permissions_router
+from composegtfs.routers import settings as settings_router
+from composegtfs.routers import users as users_router
+from composegtfs.routers import versions as versions_router
+from composegtfs.routers import agencies as agencies_router
+from composegtfs.routers.calendars import aux_calendars_router, calendars_router
+from composegtfs.routers import stops as stops_router
+from composegtfs.routers import routes as routes_router
+from composegtfs.routers import schedule as schedule_router
+from composegtfs.routers import routing as routing_router
+from composegtfs.routers import gtfs_export as gtfs_export_router
+from composegtfs.routers import shapes as shapes_router
+from composegtfs.routers import headsigns as headsigns_router
 
 app = FastAPI(
     title="composegtfs",

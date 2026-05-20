@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from app.config import settings
-from app.database import get_session
-from app.models import User
+from composegtfs.config import settings
+from composegtfs.database import get_session
+from composegtfs.models import User
 
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 

@@ -9,7 +9,7 @@ import unittest
 # Must be first: sets env vars and adjusts sys.path
 import tests.test_config  # noqa: F401
 
-from app.permissions import (
+from composegtfs.permissions import (
     ALL_CODENAMES,
     PERMISSION_GROUPS,
     Permission,

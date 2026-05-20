@@ -8,10 +8,10 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
-from app.database import get_session
-from app.models import AuxCalendar, AuxCalendarDate, Calendar, CalendarAuxCalendar, User, Version
-from app.permissions import Permission, require
+from composegtfs.auth import get_current_user
+from composegtfs.database import get_session
+from composegtfs.models import AuxCalendar, AuxCalendarDate, Calendar, CalendarAuxCalendar, User, Version
+from composegtfs.permissions import Permission, require
 
 # Two sub-routers sharing the same permission set, mounted in main.py
 calendars_router = APIRouter(

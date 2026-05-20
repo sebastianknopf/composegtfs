@@ -9,11 +9,11 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
-from app.database import get_session
-from app.models import Calendar, Headsign, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
-from app.permissions import Permission, require
-from app.services.generate_global_ids import GlobalIdResolutionError, generate_global_ids
+from composegtfs.auth import get_current_user
+from composegtfs.database import get_session
+from composegtfs.models import Calendar, Headsign, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
+from composegtfs.permissions import Permission, require
+from composegtfs.services.generate_global_ids import GlobalIdResolutionError, generate_global_ids
 
 router = APIRouter(prefix="/api/versions/{version_id}/schedule", tags=["schedule"])
 

@@ -5,9 +5,9 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import hash_password
-from app.config import settings
-from app.models import User, Version
+from composegtfs.auth import hash_password
+from composegtfs.config import settings
+from composegtfs.models import User, Version
 
 logger = logging.getLogger(__name__)
 

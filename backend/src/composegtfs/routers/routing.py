@@ -11,9 +11,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response, status as http_status
 from pydantic import BaseModel, Field
 
-from app.auth import get_current_user
-from app.permissions import Permission, require
-from app.services.graphhopper import (
+from composegtfs.auth import get_current_user
+from composegtfs.permissions import Permission, require
+from composegtfs.services.graphhopper import (
     GraphhopperError,
     VALID_GTFS_TYPES,
     UNSUPPORTED_GTFS_TYPES,

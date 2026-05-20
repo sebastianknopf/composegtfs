@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Forei
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from composegtfs.database import Base
 
 
 def _now() -> datetime:

@@ -35,8 +35,8 @@ def run_migrations() -> None:
 
 
 async def run_seed() -> None:
-    from app.database import AsyncSessionLocal
-    from app.seed import seed_initial_data, seed_initial_version
+    from composegtfs.database import AsyncSessionLocal
+    from composegtfs.seed import seed_initial_data, seed_initial_version
 
     logger.info("Seeding database …")
     async with AsyncSessionLocal() as session:
@@ -47,11 +47,11 @@ async def run_seed() -> None:
 
 def start_server() -> None:
     import uvicorn
-    from app.config import settings
+    from composegtfs.config import settings
 
     logger.info("Starting uvicorn on %s:%d …", settings.host, settings.port)
     uvicorn.run(
-        "app.main:app",
+        "composegtfs.main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.debug,

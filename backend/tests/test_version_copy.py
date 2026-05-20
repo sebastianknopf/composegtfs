@@ -18,8 +18,8 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from app.models import Agency, Route, Stop, Trip, Version
-from app.services.version_copy import (
+from composegtfs.models import Agency, Route, Stop, Trip, Version
+from composegtfs.services.version_copy import (
     _copy_agencies,
     _copy_routes,
     _copy_schedule,

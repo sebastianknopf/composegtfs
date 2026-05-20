@@ -9,10 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth import get_current_user, hash_password
-from app.database import get_session
-from app.models import Group, User
-from app.permissions import Permission, require
+from composegtfs.auth import get_current_user, hash_password
+from composegtfs.database import get_session
+from composegtfs.models import Group, User
+from composegtfs.permissions import Permission, require
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 

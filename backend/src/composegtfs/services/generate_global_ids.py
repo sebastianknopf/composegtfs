@@ -23,7 +23,7 @@ from typing import NamedTuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Agency, Route, Trip
+from composegtfs.models import Agency, Route, Trip
 
 _NAMESPACE = uuid.NAMESPACE_OID
 
