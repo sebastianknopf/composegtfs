@@ -67,6 +67,7 @@ function emptyForm() {
     stop_timezone:       '',
     wheelchair_boarding: '',
     platform_code:       '',
+    global_id:           '',
   }
 }
 
@@ -174,6 +175,7 @@ function populateForm() {
       stop_timezone:       props.stop.stop_timezone       ?? '',
       wheelchair_boarding: props.stop.wheelchair_boarding != null ? String(props.stop.wheelchair_boarding) : '',
       platform_code:       props.stop.platform_code       ?? '',
+      global_id:           props.stop.global_id           ?? '',
     }
   } else {
     form.value = {
@@ -230,6 +232,7 @@ function handleSave() {
     stop_timezone:       str(form.value.stop_timezone),
     wheelchair_boarding: int_(form.value.wheelchair_boarding),
     platform_code:       str(form.value.platform_code),
+    global_id:           str(form.value.global_id),
   })
 }
 
@@ -289,6 +292,13 @@ function handleDelete() {
             :value="form.stop_code"
             :disabled="isReadonly"
             @input="form.stop_code = $event.target.value"
+          />
+
+          <md-outlined-text-field
+            :label="t('stops.field_global_id')"
+            :value="form.global_id"
+            :disabled="isReadonly"
+            @input="form.global_id = $event.target.value"
           />
         </div>
 

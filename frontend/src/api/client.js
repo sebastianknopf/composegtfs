@@ -58,6 +58,9 @@ async function _parseError(res) {
   const err = new Error(code)
   err.status = res.status
   err.code = code
+  err.detail = (detail !== null && typeof detail === 'object' && !Array.isArray(detail))
+    ? detail
+    : (typeof detail === 'string' ? detail : null)
   return err
 }
 
@@ -205,7 +208,8 @@ export const api = {
       batchDelete: (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-delete`, { trip_ids: tripIds }),
       batchShift:  (versionId, routeId, tripIds, offsetMinutes, direction) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-shift`, { trip_ids: tripIds, offset_minutes: offsetMinutes, direction }),
       batchCopy:   (versionId, routeId, body) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-copy`, body),
-      wizardAssignShapes: (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/wizard/assign-shapes`, { trip_ids: tripIds }),
+      wizardAssignShapes:      (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/wizard/assign-shapes`, { trip_ids: tripIds }),
+      wizardGenerateGlobalIds: (versionId, routeId, body)    => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/wizard/generate-global-ids`, body),
     },
     stopTimes: {
       list:   (versionId, routeId, tripId)                        => request('GET',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times`),

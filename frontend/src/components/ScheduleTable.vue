@@ -70,6 +70,7 @@ function createEmptyTrip() {
     saved:     false,
     selected:  false,
     short_name: '',
+    global_id:  '',
     day_type: '',
     route_path: '',
     headsign_id: null,
@@ -157,7 +158,7 @@ function onDummyInput(opts = {}) {
   nextTick(() => {
     const d = dummyTrip.value
     const hasContent =
-      d.short_name.trim() || d.day_type.trim() || d.route_path.trim() || d.headsign_id ||
+      d.short_name.trim() || d.global_id.trim() || d.day_type.trim() || d.route_path.trim() || d.headsign_id ||
       Object.values(d.attributes).some(v => v !== null) ||
       Object.values(d.times).some(v => (v ?? '').trim())
     if (!hasContent) return
@@ -231,6 +232,7 @@ async function loadTrips() {
         tripId:     bt.trip_id,
         saved:      true,
         short_name: bt.trip_short_name ?? '',
+        global_id:  bt.global_id ?? '',
         day_type:   bt.service_id ?? '',
         route_path: bt.shape_id ?? '',
         headsign_id: bt.trip_headsign_id ?? null,
@@ -312,6 +314,7 @@ async function maybeSaveTrip(trip) {
       service_id:            trip.day_type || null,
       direction_id:          props.direction,
       trip_short_name:       trip.short_name || null,
+      global_id:             trip.global_id || null,
       shape_id:              trip.route_path || null,
       trip_headsign_id:      trip.headsign_id || null,
       wheelchair_accessible: attrToGtfs(trip.attributes.wheelchair_accessible),
@@ -346,6 +349,7 @@ async function updateTripOnBackend(trip) {
     await api.schedule.trips.update(props.versionId, props.routeId, trip.tripId, {
       service_id:            trip.day_type || null,
       trip_short_name:       trip.short_name || null,
+      global_id:             trip.global_id || null,
       shape_id:              trip.route_path || null,
       trip_headsign_id:      trip.headsign_id || null,
       wheelchair_accessible: attrToGtfs(trip.attributes.wheelchair_accessible),
@@ -1077,6 +1081,14 @@ function onTripShortNameBlur(trip) {
   }
 }
 
+function onTripGlobalIdBlur(trip) {
+  if (trip.saved) {
+    updateTripOnBackend(trip)
+  } else {
+    maybeSaveTrip(trip)
+  }
+}
+
 // Indicator helpers
 function hasArrivalDiff(trip, entryId) {
   const st = trip.stopTimes?.[entryId]
@@ -1224,7 +1236,37 @@ defineExpose({
               <td class="schedule-table__filler-cell" />
             </tr>
 
-            <!-- Row 3: Day type -->
+            <!-- Row 3: Global ID -->
+            <tr class="schedule-table__header-row">
+              <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_global_id') }}</th>
+              <td
+                v-for="trip in visibleTrips"
+                :key="trip.id + '-gid'"
+                class="schedule-table__trip-input-cell"
+              >
+                <input
+                  class="schedule-table__trip-input"
+                  :data-trip="trip.id"
+                  data-field="global_id"
+                  v-model="trip.global_id"
+                  :disabled="readonlyMode"
+                  @blur="onTripGlobalIdBlur(trip)"
+                />
+              </td>
+              <template v-if="props.canWrite && bandEntries.length > 0">
+                <td class="schedule-table__trip-input-cell schedule-table__trip-input-cell--dummy">
+                  <input
+                    class="schedule-table__trip-input schedule-table__trip-input--ghost"
+                    v-model="dummyTrip.global_id"
+                    :placeholder="t('schedule.trip_placeholder')"
+                    @input="e => onDummyInput({ fieldName: 'global_id' })"
+                  />
+                </td>
+              </template>
+              <td class="schedule-table__filler-cell" />
+            </tr>
+
+            <!-- Row 4: Day type -->
             <tr class="schedule-table__header-row">
               <th colspan="2" class="schedule-table__th schedule-table__th--row-label" scope="row">{{ t('schedule.trip_day_type') }}</th>
               <td

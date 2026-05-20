@@ -18,6 +18,7 @@ import tests.test_config  # noqa: F401
 
 from app.services.gtfs_export import (
     _base_dates_in_range,
+    _build_export_id_map,
     _cumulative_distances_m,
     _decode_polyline,
     _format_gtfs_time,
@@ -454,6 +455,131 @@ class TestComputeCalendarExceptions(unittest.TestCase):
     def test_empty_calendars_returns_empty(self) -> None:
         result = compute_calendar_exceptions([], [], {}, self._JAN_1, self._JAN_7)
         self.assertEqual(result, [])
+
+
+# ---------------------------------------------------------------------------
+# _build_export_id_map
+# ---------------------------------------------------------------------------
+
+def _item(internal_id: str, global_id: str | None = None):
+    """Minimal stub with internal_id and global_id attributes."""
+    import types
+    obj = types.SimpleNamespace()
+    obj.internal_id = internal_id
+    obj.global_id = global_id
+    return obj
+
+
+class TestBuildExportIdMap(unittest.TestCase):
+
+    def _call(self, items, missing_key="missing", duplicate_key="duplicate"):
+        return _build_export_id_map(
+            items,
+            lambda x: x.internal_id,
+            lambda x: x.global_id,
+            missing_key,
+            "id",
+            duplicate_key,
+        )
+
+    # -- basic mapping --
+
+    def test_empty_list_returns_empty_map(self) -> None:
+        id_map, log_events, error_events = self._call([])
+        self.assertEqual(id_map, {})
+        self.assertEqual(log_events, [])
+        self.assertEqual(error_events, [])
+
+    def test_single_item_with_global_id(self) -> None:
+        items = [_item("INT-1", "GLB-1")]
+        id_map, log_events, _ = self._call(items)
+        self.assertEqual(id_map, {"INT-1": "GLB-1"})
+        self.assertEqual(log_events, [])
+
+    def test_multiple_unique_global_ids(self) -> None:
+        items = [_item("A", "GA"), _item("B", "GB"), _item("C", "GC")]
+        id_map, log_events, error_events = self._call(items)
+        self.assertEqual(id_map, {"A": "GA", "B": "GB", "C": "GC"})
+        self.assertEqual(log_events, [])
+        self.assertEqual(error_events, [])
+
+    # -- missing global IDs --
+
+    def test_missing_global_id_falls_back_to_internal(self) -> None:
+        items = [_item("INT-1", None)]
+        id_map, log_events, error_events = self._call(items, missing_key="missing_key")
+        self.assertEqual(id_map, {"INT-1": "INT-1"})
+        self.assertEqual(error_events, [])
+        self.assertEqual(len(log_events), 1)
+        self.assertEqual(log_events[0]["level"], "MiddlePrio")
+        self.assertEqual(log_events[0]["key"], "missing_key")
+        self.assertEqual(log_events[0]["params"]["id"], "INT-1")
+
+    def test_empty_string_global_id_treated_as_missing(self) -> None:
+        items = [_item("INT-1", "")]
+        id_map, log_events, _ = self._call(items)
+        self.assertEqual(id_map["INT-1"], "INT-1")
+        self.assertEqual(log_events[0]["level"], "MiddlePrio")
+
+    def test_mixed_present_and_missing_global_ids(self) -> None:
+        items = [_item("A", "GA"), _item("B", None), _item("C", "GC")]
+        id_map, log_events, error_events = self._call(items)
+        self.assertEqual(id_map, {"A": "GA", "B": "B", "C": "GC"})
+        self.assertEqual(len(log_events), 1)
+        self.assertEqual(error_events, [])
+
+    # -- duplicate global IDs (collision) --
+
+    def test_duplicate_global_id_emits_highprio_error(self) -> None:
+        items = [_item("T1", "GLB-DUPE"), _item("T2", "GLB-DUPE")]
+        id_map, log_events, error_events = self._call(items, duplicate_key="dupe_key")
+        self.assertEqual(len(error_events), 1)
+        self.assertEqual(error_events[0]["level"], "HighPrio")
+        self.assertEqual(error_events[0]["key"], "dupe_key")
+        self.assertEqual(error_events[0]["params"]["global_id"], "GLB-DUPE")
+
+    def test_duplicate_is_also_in_log_events(self) -> None:
+        items = [_item("T1", "DUPE"), _item("T2", "DUPE")]
+        _, log_events, error_events = self._call(items)
+        self.assertIn(error_events[0], log_events)
+
+    def test_first_occurrence_not_in_error_events(self) -> None:
+        items = [_item("T1", "DUPE"), _item("T2", "DUPE"), _item("T3", "DUPE")]
+        id_map, _, error_events = self._call(items)
+        # Two duplicates (T2 and T3 both collide with T1)
+        self.assertEqual(len(error_events), 2)
+
+    def test_first_item_keeps_global_id_on_collision(self) -> None:
+        items = [_item("T1", "DUPE"), _item("T2", "DUPE")]
+        id_map, _, _ = self._call(items)
+        self.assertEqual(id_map["T1"], "DUPE")
+
+    def test_trip_collision_scenario(self) -> None:
+        """Two trips share the same global_id; simulates the GTFS export collision case."""
+        trips = [
+            _item("TRIP-001", "CH:trip:1"),
+            _item("TRIP-002", "CH:trip:1"),  # duplicate
+            _item("TRIP-003", "CH:trip:2"),  # unique
+        ]
+        id_map, log_events, error_events = _build_export_id_map(
+            trips,
+            lambda t: t.internal_id,
+            lambda t: t.global_id,
+            "global_id_missing_trip",
+            "trip_id",
+            "global_id_duplicate_trip",
+        )
+        self.assertEqual(len(error_events), 1)
+        self.assertEqual(error_events[0]["key"], "global_id_duplicate_trip")
+        self.assertEqual(error_events[0]["params"]["global_id"], "CH:trip:1")
+        # Non-duplicate trip is exported normally
+        self.assertEqual(id_map["TRIP-003"], "CH:trip:2")
+
+    def test_no_collision_when_all_global_ids_unique(self) -> None:
+        trips = [_item(f"T{i}", f"GLB-{i}") for i in range(10)]
+        _, log_events, error_events = self._call(trips)
+        self.assertEqual(log_events, [])
+        self.assertEqual(error_events, [])
 
 
 if __name__ == "__main__":

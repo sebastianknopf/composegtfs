@@ -122,6 +122,7 @@ class Agency(Base):
     agency_fare_url = Column(String(2048), nullable=True)
     agency_email    = Column(String(254), nullable=True)
     cemv_support    = Column(Integer, nullable=True)
+    global_id       = Column(String(255), nullable=True)
 
     version = relationship("Version", back_populates="agencies")
 
@@ -262,6 +263,7 @@ class Stop(Base):
     level_id            = Column(String(255),  nullable=True)
     platform_code       = Column(String(255),  nullable=True)
     stop_access         = Column(SmallInteger, nullable=True)
+    global_id           = Column(String(255),  nullable=True)
 
     version = relationship("Version", back_populates="stops")
     shape_intermediate_points = relationship(
@@ -306,6 +308,7 @@ class Route(Base):
     continuous_drop_off = Column(SmallInteger, nullable=True)
     network_id          = Column(String(255), nullable=True)
     cemv_support        = Column(Integer,     nullable=True)
+    global_id           = Column(String(255), nullable=True)
 
     version = relationship("Version", back_populates="routes")
     trips = relationship("Trip", back_populates="route", cascade="all, delete-orphan")
@@ -450,6 +453,8 @@ class Trip(Base):
     wheelchair_accessible = Column(SmallInteger, nullable=True)
     bikes_allowed         = Column(SmallInteger, nullable=True)
     cars_allowed          = Column(SmallInteger, nullable=True)  # non-standard extension
+
+    global_id             = Column(String(255), nullable=True)
 
     # Hash columns for later use (pattern matching, geo deduplication)
     geo_pattern_hash      = Column(String(64), nullable=True)

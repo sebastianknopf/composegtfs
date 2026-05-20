@@ -13,6 +13,7 @@ from app.auth import get_current_user
 from app.database import get_session
 from app.models import Calendar, Headsign, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
 from app.permissions import Permission, require
+from app.services.generate_global_ids import GlobalIdResolutionError, generate_global_ids
 
 router = APIRouter(prefix="/api/versions/{version_id}/schedule", tags=["schedule"])
 
@@ -652,6 +653,7 @@ class TripOut(BaseModel):
     wheelchair_accessible: int | None
     bikes_allowed:         int | None
     cars_allowed:          int | None
+    global_id:             str | None
     geo_pattern_hash:      str | None
     schedule_pattern_hash: str | None
 
@@ -669,6 +671,7 @@ class TripCreate(BaseModel):
     wheelchair_accessible: int | None = None
     bikes_allowed:         int | None = None
     cars_allowed:          int | None = None
+    global_id:             str | None = None
 
     @field_validator("direction_id")
     @classmethod
@@ -688,6 +691,7 @@ class TripUpdate(BaseModel):
     wheelchair_accessible: int | None = None
     bikes_allowed:         int | None = None
     cars_allowed:          int | None = None
+    global_id:             str | None = None
 
     @field_validator("direction_id")
     @classmethod
@@ -1115,6 +1119,60 @@ async def wizard_assign_shapes(
     return TripWizardAssignShapesResponse(updated=updated, already_assigned=already_assigned, no_match=no_match)
 
 
+class TripWizardGenerateGlobalIdsRequest(BaseModel):
+    trip_ids: list[str]
+    preset: str
+    overwrite: bool = False
+
+    @field_validator("preset")
+    @classmethod
+    def preset_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("preset must not be empty")
+        if len(v) > 255:
+            raise ValueError("preset must not exceed 255 characters")
+        return v
+
+
+class TripWizardGenerateGlobalIdsResponse(BaseModel):
+    updated: int
+    skipped: int
+
+
+@router.post(
+    "/{route_id}/trips/wizard/generate-global-ids",
+    response_model=TripWizardGenerateGlobalIdsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate global IDs for selected trips using a preset template",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def wizard_generate_global_ids(
+    version_id: uuid.UUID,
+    route_id:   str,
+    req:        TripWizardGenerateGlobalIdsRequest = Body(...),
+    _:          User                               = Depends(get_current_user),
+    session:    AsyncSession                       = Depends(get_session),
+) -> TripWizardGenerateGlobalIdsResponse:
+    """Resolve the preset template for each trip in *req.trip_ids* and store
+    the result as ``global_id``.  When ``overwrite`` is False, trips that
+    already carry a ``global_id`` are counted as skipped."""
+    await _get_version_or_404(version_id, session)
+    try:
+        result = await generate_global_ids(
+            version_id=version_id,
+            route_id=route_id,
+            trip_ids=req.trip_ids,
+            preset=req.preset,
+            overwrite=req.overwrite,
+            session=session,
+        )
+    except GlobalIdResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": exc.error_code, **exc.params},
+        )
+    return TripWizardGenerateGlobalIdsResponse(updated=result.updated, skipped=result.skipped)
 
 
 class TripBatchCopyShift(BaseModel):

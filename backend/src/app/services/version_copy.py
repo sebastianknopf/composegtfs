@@ -197,6 +197,7 @@ async def _copy_agencies(
             agency_fare_url=r.agency_fare_url,
             agency_email=r.agency_email,
             cemv_support=r.cemv_support,
+            global_id=r.global_id,
         ))
 
 
@@ -309,6 +310,7 @@ async def _copy_stops(
             level_id=s.level_id,
             platform_code=s.platform_code,
             stop_access=s.stop_access,
+            global_id=s.global_id,
         ))
 
 
@@ -337,6 +339,7 @@ async def _copy_routes(
             continuous_drop_off=r.continuous_drop_off,
             network_id=r.network_id,
             cemv_support=r.cemv_support,
+            global_id=r.global_id,
         ))
 
 
@@ -544,6 +547,7 @@ async def _copy_schedule(
             wheelchair_accessible=t.wheelchair_accessible,
             bikes_allowed=t.bikes_allowed,
             cars_allowed=t.cars_allowed,
+            global_id=t.global_id,
             geo_pattern_hash=t.geo_pattern_hash,
             schedule_pattern_hash=t.schedule_pattern_hash,
         ))

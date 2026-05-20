@@ -72,6 +72,44 @@ def _log(level: str, key: str, params: dict | None = None, status: str = "runnin
     return {"level": level, "key": key, "params": params or {}, "status": status}
 
 
+def _build_export_id_map(
+    items: list,
+    get_internal_id,
+    get_global_id,
+    missing_key: str,
+    missing_param_name: str,
+    duplicate_key: str,
+) -> tuple[dict[str, str], list[ExportEvent], list[ExportEvent]]:
+    """Build an internal-ID → exported-ID map using global IDs.
+
+    For each item:
+    - If its global_id is empty/None, a MiddlePrio warning is emitted and the
+      internal ID is used as fallback.
+    - If its global_id duplicates one already seen, a HighPrio error is emitted
+      and the duplicate is added to *error_events*.
+
+    Returns ``(id_map, log_events, error_events)`` where *error_events* contains
+    only the HighPrio duplicates.
+    """
+    id_map: dict[str, str] = {}
+    log_events: list[ExportEvent] = []
+    error_events: list[ExportEvent] = []
+    seen: dict[str, str] = {}
+    for item in items:
+        internal_id = get_internal_id(item)
+        exp: str | None = get_global_id(item) or None
+        if exp is None:
+            log_events.append(_log("MiddlePrio", missing_key, {missing_param_name: internal_id}))
+            exp = internal_id
+        elif exp in seen:
+            evt = _log("HighPrio", duplicate_key, {"global_id": exp})
+            log_events.append(evt)
+            error_events.append(evt)
+        seen[exp] = internal_id
+        id_map[internal_id] = exp
+    return id_map, log_events, error_events
+
+
 # ---------------------------------------------------------------------------
 # Geometry helper functions
 # ---------------------------------------------------------------------------
@@ -317,6 +355,7 @@ async def run_export(
     session: AsyncSession,
     export_all_stops: bool = False,
     export_shapes: bool = True,
+    prefer_global_ids: bool = False,
 ) -> AsyncGenerator[ExportEvent, None]:
     """Async generator: incrementally builds the GTFS feed and yields structured log events.
 
@@ -548,6 +587,13 @@ async def run_export(
     agency_ids_set = {r.agency_id for r in routes if r.agency_id}
     agencies = [a for a in agencies if a.agency_id in agency_ids_set]
 
+    # Pre-compute stops_to_export so it is available for ID map building below.
+    stops_to_export = (
+        sorted(stops_by_id.values(), key=lambda s: s.stop_id)
+        if export_all_stops
+        else filter_referenced_stops(stops_by_id, referenced_stop_ids)
+    )
+
     # ── Pre-build validation ────────────────────────────────────────────────────────────
     # Collect all HighPrio validation errors before aborting; only Python exceptions
     # cause an immediate abort (see except block).
@@ -570,6 +616,63 @@ async def run_export(
     for t in trips:
         if not t.trip_headsign_id:
             yield _log("MiddlePrio", "trip_no_headsign", {"trip_id": t.trip_id})
+
+    # ── Build export-ID maps ────────────────────────────────────────────────────────────
+    # When prefer_global_ids is True each object's global_id is written instead of the
+    # internal ID.  Missing global IDs fall back to the internal ID with a warning;
+    # duplicate global IDs within the same object type abort the export.
+    agency_id_map: dict[str, str] = {}  # internal → exported ID
+    route_id_map:  dict[str, str] = {}
+    stop_id_map:   dict[str, str] = {}
+    trip_id_map:   dict[str, str] = {}
+
+    if prefer_global_ids:
+        agency_id_map, evts, errs = _build_export_id_map(
+            agencies,
+            lambda a: a.agency_id, lambda a: a.global_id,
+            "global_id_missing_agency", "agency_id", "global_id_duplicate_agency",
+        )
+        for e in evts:
+            yield e
+        validation_errors.extend(errs)
+
+        route_id_map, evts, errs = _build_export_id_map(
+            routes,
+            lambda r: r.route_id, lambda r: r.global_id,
+            "global_id_missing_route", "route_id", "global_id_duplicate_route",
+        )
+        for e in evts:
+            yield e
+        validation_errors.extend(errs)
+
+        # stops (includes parent stations via filter_referenced_stops)
+        stop_id_map, evts, errs = _build_export_id_map(
+            stops_to_export,
+            lambda s: s.stop_id, lambda s: s.global_id,
+            "global_id_missing_stop", "stop_id", "global_id_duplicate_stop",
+        )
+        for e in evts:
+            yield e
+        validation_errors.extend(errs)
+
+        trip_id_map, evts, errs = _build_export_id_map(
+            trips,
+            lambda t: t.trip_id, lambda t: t.global_id,
+            "global_id_missing_trip", "trip_id", "global_id_duplicate_trip",
+        )
+        for e in evts:
+            yield e
+        validation_errors.extend(errs)
+    else:
+        # Identity maps — no transformation
+        for a in agencies:
+            agency_id_map[a.agency_id] = a.agency_id
+        for r in routes:
+            route_id_map[r.route_id] = r.route_id
+        for s in stops_to_export:
+            stop_id_map[s.stop_id] = s.stop_id
+        for t in trips:
+            trip_id_map[t.trip_id] = t.trip_id
 
     # Build short shape ID mapping (8-char CRC32 hex), with salt-based collision resolution
     shape_id_map: dict[str, str] = {}  # original shape_id → short shape_id
@@ -606,7 +709,8 @@ async def run_export(
             ])
             for a in agencies:
                 w.writerow([
-                    a.agency_id, a.agency_name, a.agency_url, a.agency_timezone,
+                    agency_id_map.get(a.agency_id, a.agency_id),
+                    a.agency_name, a.agency_url, a.agency_timezone,
                     a.agency_lang or "", a.agency_phone or "",
                     a.agency_fare_url or "", a.agency_email or "",
                 ])
@@ -629,7 +733,8 @@ async def run_export(
             )
             for new_order, r in enumerate(routes_sorted, start=1):
                 w.writerow([
-                    r.route_id, r.agency_id or "",
+                    route_id_map.get(r.route_id, r.route_id),
+                    agency_id_map.get(r.agency_id, r.agency_id) if r.agency_id else "",
                     r.route_short_name or "", r.route_long_name or "",
                     r.route_desc or "", r.route_type,
                     r.route_url or "", r.route_color or "", r.route_text_color or "",
@@ -709,7 +814,9 @@ async def run_export(
             ])
             for t in trips:
                 w.writerow([
-                    t.route_id, t.service_id or "", t.trip_id,
+                    route_id_map.get(t.route_id, t.route_id),
+                    t.service_id or "",
+                    trip_id_map.get(t.trip_id, t.trip_id),
                     headsign_map.get(t.trip_headsign_id, "") if t.trip_headsign_id else "",
                     t.trip_short_name or "",
                     "" if t.direction_id is None else str(t.direction_id),
@@ -721,13 +828,7 @@ async def run_export(
             zf.writestr("trips.txt", buf.getvalue())
 
             # ── stops.txt ────────────────────────────────────────────
-            # Only stops referenced by route bands of the selected routes,
-            # plus their parent stations.
-            stops_to_export = (
-                sorted(stops_by_id.values(), key=lambda s: s.stop_id)
-                if export_all_stops
-                else filter_referenced_stops(stops_by_id, referenced_stop_ids)
-            )
+            # stops_to_export was pre-computed before validation (needed for ID map building).
             buf = io.StringIO()
             w = csv.writer(buf)
             w.writerow([
@@ -738,14 +839,16 @@ async def run_export(
             ])
             for s in stops_to_export:
                 w.writerow([
-                    s.stop_id, s.stop_code or "",
+                    stop_id_map.get(s.stop_id, s.stop_id),
+                    s.stop_code or "",
                     s.stop_name or "", s.tts_stop_name or "",
                     s.stop_desc or "",
                     f"{s.stop_lat:.6f}" if s.stop_lat is not None else "",
                     f"{s.stop_lon:.6f}" if s.stop_lon is not None else "",
                     s.zone_id or "", s.stop_url or "",
                     "" if s.location_type is None else str(s.location_type),
-                    s.parent_station or "", s.stop_timezone or "",
+                    stop_id_map.get(s.parent_station, s.parent_station) if s.parent_station else "",
+                    s.stop_timezone or "",
                     "" if s.wheelchair_boarding is None else str(s.wheelchair_boarding),
                     s.level_id or "", s.platform_code or "",
                 ])
@@ -794,8 +897,8 @@ async def run_export(
                 arr = _format_gtfs_time(st.arrival_time) or dep  # GTFS: arrival must not be empty
 
                 w.writerow([
-                    st.trip_id, arr, dep,
-                    rbs.stop_id, _seq_counter,
+                    trip_id_map.get(st.trip_id, st.trip_id), arr, dep,
+                    stop_id_map.get(rbs.stop_id, rbs.stop_id), _seq_counter,
                     headsign_map.get(st.stop_headsign_id, "") if st.stop_headsign_id else "",
                     "" if st.pickup_type is None else str(st.pickup_type),
                     "" if st.drop_off_type is None else str(st.drop_off_type),

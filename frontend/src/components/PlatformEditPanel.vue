@@ -68,6 +68,7 @@ function emptyForm() {
     wheelchair_boarding: '',
     platform_code:       '',
     stop_access:         '',
+    global_id:           '',
   }
 }
 
@@ -176,6 +177,7 @@ function populateForm() {
       wheelchair_boarding: props.platform.wheelchair_boarding != null ? String(props.platform.wheelchair_boarding) : '',
       platform_code:       props.platform.platform_code       ?? '',
       stop_access:         props.platform.stop_access         != null ? String(props.platform.stop_access)         : '',
+      global_id:           props.platform.global_id           ?? '',
     }
   } else {
     form.value = {
@@ -233,6 +235,7 @@ function handleSave() {
     wheelchair_boarding: int_(form.value.wheelchair_boarding),
     platform_code:       str(form.value.platform_code),
     stop_access:         int_(form.value.stop_access),
+    global_id:           str(form.value.global_id),
   })
 }
 
@@ -295,6 +298,13 @@ function handleDelete() {
             :value="form.stop_code"
             :disabled="isReadonly"
             @input="form.stop_code = $event.target.value"
+          />
+
+          <md-outlined-text-field
+            :label="t('stops.field_global_id')"
+            :value="form.global_id"
+            :disabled="isReadonly"
+            @input="form.global_id = $event.target.value"
           />
         </div>
 

@@ -35,6 +35,7 @@ class RouteOut(BaseModel):
     continuous_drop_off: int | None
     network_id:          str | None
     cemv_support:        int | None
+    global_id:           str | None
 
     model_config = {"from_attributes": True}
 
@@ -54,6 +55,7 @@ class RouteCreate(BaseModel):
     continuous_drop_off: int | None = None
     network_id:          str | None = None
     cemv_support:        int | None = None
+    global_id:           str | None = None
 
     @field_validator("route_id")
     @classmethod
@@ -128,6 +130,7 @@ class RouteUpdate(BaseModel):
     continuous_drop_off: int | None = None
     network_id:          str | None = None
     cemv_support:        int | None = None
+    global_id:           str | None = None
 
     @field_validator("route_type")
     @classmethod
@@ -291,6 +294,7 @@ async def create_route(
         continuous_drop_off=body.continuous_drop_off,
         network_id=body.network_id,
         cemv_support=body.cemv_support,
+        global_id=body.global_id,
     )
     session.add(route)
     await session.commit()
@@ -367,6 +371,7 @@ async def update_route(
         "route_long_name", "route_desc", "route_url",
         "route_color", "route_text_color", "route_sort_order",
         "continuous_pickup", "continuous_drop_off", "network_id", "cemv_support",
+        "global_id",
     )
     for field in _NULLABLE_ROUTE_FIELDS:
         if field in body.model_fields_set:

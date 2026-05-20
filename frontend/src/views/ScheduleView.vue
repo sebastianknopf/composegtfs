@@ -10,6 +10,7 @@ import ScheduleTable from '@/components/ScheduleTable.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TripShiftModal from '@/components/TripShiftModal.vue'
 import TripCopyModal from '@/components/TripCopyModal.vue'
+import TripGlobalIdGeneratorModal from '@/components/TripGlobalIdGeneratorModal.vue'
 import '@material/web/icon/icon.js'
 import '@material/web/button/outlined-button.js'
 import '@material/web/button/filled-button.js'
@@ -239,8 +240,9 @@ async function confirmDeleteTrips() {
 }
 
 // ---- Wizard ----
-const wizardMenuOpen  = ref(false)
-const wizardLoading   = ref(false)
+const wizardMenuOpen        = ref(false)
+const wizardLoading         = ref(false)
+const globalIdGeneratorOpen = ref(false)
 // Close the menu whenever the selection changes so it doesn't auto-open
 // when the wizard button appears after a trip is selected.
 watch(selectedTripsCount, () => { wizardMenuOpen.value = false })
@@ -270,6 +272,47 @@ async function onWizardAssignShapes() {
     }
   } catch {
     toast.show(t('schedule.wizard_assign_shapes_error'), 'error')
+  } finally {
+    wizardLoading.value = false
+  }
+}
+
+function onWizardGenerateGlobalIds() {
+  wizardMenuOpen.value = false
+  if (!canWriteSchedule.value) return
+  globalIdGeneratorOpen.value = true
+}
+
+async function confirmGenerateGlobalIds({ preset, overwrite }) {
+  globalIdGeneratorOpen.value = false
+  const trips = scheduleTableRef.value?.trips ?? []
+  const selected = trips.filter(t => t.selected)
+  if (!selected.length) return
+  const tripIds = selected.map(t => t.tripId)
+  wizardLoading.value = true
+  try {
+    const result = await api.schedule.trips.wizardGenerateGlobalIds(
+      versionId.value,
+      selectedRoute.value.route_id,
+      { trip_ids: tripIds, preset, overwrite },
+    )
+    const parts = []
+    if (result.updated > 0) parts.push(t('schedule.wizard_global_id_updated', { count: result.updated }))
+    if (result.skipped > 0) parts.push(t('schedule.wizard_global_id_skipped', { count: result.skipped }))
+    const msg = parts.join(' ') || t('schedule.wizard_global_id_none')
+    toast.show(msg, result.updated > 0 ? 'info' : 'error')
+    if (result.updated > 0) {
+      await scheduleTableRef.value?.loadTrips?.()
+    }
+  } catch (err) {
+    const detail = err?.detail
+    let msg
+    if (detail && typeof detail === 'object' && detail.error_code) {
+      const params = Object.fromEntries(Object.entries(detail).filter(([k]) => k !== 'error_code'))
+      msg = t(`schedule.global_id_errors.${detail.error_code}`, params)
+    }
+    if (!msg) msg = t('schedule.wizard_global_id_error')
+    toast.show(msg, 'error')
   } finally {
     wizardLoading.value = false
   }
@@ -394,6 +437,9 @@ async function onWizardAssignShapes() {
               <md-menu-item class="toolbar-menu-item" @click="onWizardAssignShapes">
                 <div slot="headline">{{ t('schedule.wizard_assign_shapes') }}</div>
               </md-menu-item>
+              <md-menu-item class="toolbar-menu-item" @click="onWizardGenerateGlobalIds">
+                <div slot="headline">{{ t('schedule.wizard_generate_global_ids') }}</div>
+              </md-menu-item>
             </md-menu>
           </div>
 
@@ -449,6 +495,12 @@ async function onWizardAssignShapes() {
       v-model="copyModalOpen"
       :day-types="dayTypes"
       @confirm="confirmCopyTrips"
+    />
+
+    <TripGlobalIdGeneratorModal
+      v-model="globalIdGeneratorOpen"
+      :count="selectedTripsCount"
+      @confirm="confirmGenerateGlobalIds"
     />
 
   </div>

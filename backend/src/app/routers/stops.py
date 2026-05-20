@@ -45,6 +45,7 @@ class StopOut(BaseModel):
     level_id:            str | None
     platform_code:       str | None
     stop_access:         int | None
+    global_id:           str | None
 
     model_config = {"from_attributes": True}
 
@@ -65,6 +66,7 @@ class StopCreate(BaseModel):
     level_id:            str | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_id")
     @classmethod
@@ -127,6 +129,7 @@ class StopUpdate(BaseModel):
     level_id:            str | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_lat")
     @classmethod
@@ -181,6 +184,7 @@ class PlatformCreate(BaseModel):
     wheelchair_boarding: int | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_id")
     @classmethod
@@ -234,6 +238,7 @@ class PlatformUpdate(BaseModel):
     wheelchair_boarding: int | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_lat")
     @classmethod
