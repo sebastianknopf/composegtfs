@@ -8,10 +8,10 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
-from app.database import get_session
-from app.models import Group, GroupPermission, User, UserGroup
-from app.permissions import ALL_CODENAMES, Permission, require
+from composegtfs.auth import get_current_user
+from composegtfs.database import get_session
+from composegtfs.models import Group, GroupPermission, User, UserGroup
+from composegtfs.permissions import ALL_CODENAMES, Permission, require
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 

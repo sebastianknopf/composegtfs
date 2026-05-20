@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import authenticate_user, create_access_token, get_current_user
-from app.database import get_session
-from app.models import GroupPermission, User
+from composegtfs.auth import authenticate_user, create_access_token, get_current_user
+from composegtfs.database import get_session
+from composegtfs.models import GroupPermission, User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -57,11 +57,11 @@ async def me(
     """Return the authenticated user's effective permissions (union across all groups)."""
     if current_user.is_superuser:
         # Superusers implicitly have every permission — return all codenames
-        from app.permissions import ALL_CODENAMES
+        from composegtfs.permissions import ALL_CODENAMES
         codenames = sorted(ALL_CODENAMES)
     else:
         # Load groups lazily if needed
-        from app.models import UserGroup
+        from composegtfs.models import UserGroup
         group_id_result = await session.execute(
             select(UserGroup.group_id).where(UserGroup.user_id == current_user.id)
         )

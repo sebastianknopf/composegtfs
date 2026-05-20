@@ -35,9 +35,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_session
-from app.permissions import Permission, require
-from app.services.gtfs_export import run_export
+from composegtfs.database import get_session
+from composegtfs.permissions import Permission, require
+from composegtfs.services.gtfs_export import run_export
 
 router = APIRouter(prefix="/api/gtfs", tags=["gtfs-export"])
 

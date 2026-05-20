@@ -15,7 +15,7 @@ import unittest
 import uuid
 from unittest.mock import AsyncMock, MagicMock, call
 
-from app.services.reroute_shapes import (
+from composegtfs.services.reroute_shapes import (
     cleanup_free_coords_around_gaps,
     reroute_shapes_by_ids,
 )

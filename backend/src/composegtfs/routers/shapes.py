@@ -15,11 +15,11 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
-from app.database import get_session
-from app.models import Shape, ShapeIntermediatePoint, Stop, Trip, User, Version
-from app.services.graphhopper import encode_polyline as _encode_polyline
-from app.permissions import Permission, require
+from composegtfs.auth import get_current_user
+from composegtfs.database import get_session
+from composegtfs.models import Shape, ShapeIntermediatePoint, Stop, Trip, User, Version
+from composegtfs.services.graphhopper import encode_polyline as _encode_polyline
+from composegtfs.permissions import Permission, require
 
 router = APIRouter(
     prefix="/api/versions/{version_id}/shapes",

@@ -25,7 +25,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import (
+from composegtfs.models import (
     Agency,
     AuxCalendar,
     AuxCalendarDate,
@@ -613,6 +613,7 @@ async def _merge_agencies(
                 agency_fare_url=r.agency_fare_url,
                 agency_email=r.agency_email,
                 cemv_support=r.cemv_support,
+                global_id=r.global_id,
             ))
 
 
@@ -747,6 +748,7 @@ async def _merge_stops(
                 level_id=s.level_id,
                 platform_code=s.platform_code,
                 stop_access=s.stop_access,
+                global_id=s.global_id,
             ))
 
 
@@ -781,6 +783,7 @@ async def _merge_routes(
                 continuous_drop_off=r.continuous_drop_off,
                 network_id=r.network_id,
                 cemv_support=r.cemv_support,
+                global_id=r.global_id,
             ))
 
 
@@ -1013,6 +1016,7 @@ async def _merge_schedule(
                 cars_allowed=t.cars_allowed,
                 geo_pattern_hash=t.geo_pattern_hash,
                 schedule_pattern_hash=t.schedule_pattern_hash,
+                global_id=t.global_id,
             ))
 
     await session.flush()

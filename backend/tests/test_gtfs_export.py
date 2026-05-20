@@ -16,7 +16,7 @@ from datetime import date
 # Must be first: sets env vars and adjusts sys.path
 import tests.test_config  # noqa: F401
 
-from app.services.gtfs_export import (
+from composegtfs.services.gtfs_export import (
     _base_dates_in_range,
     _build_export_id_map,
     _cumulative_distances_m,
@@ -270,7 +270,7 @@ class TestProjectStopOnShape(unittest.TestCase):
         self, pts: list[tuple[float, float]]
     ) -> tuple[list[tuple[float, float]], list[float]]:
         """Return (pts, cumulative_distances) for a list of (lat, lon) points."""
-        from app.services.gtfs_export import _cumulative_distances_m
+        from composegtfs.services.gtfs_export import _cumulative_distances_m
         return pts, _cumulative_distances_m(pts)
 
     def test_single_point_shape_returns_min_dist(self) -> None:

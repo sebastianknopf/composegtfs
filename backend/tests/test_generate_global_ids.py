@@ -6,7 +6,7 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from app.services.generate_global_ids import GlobalIdResolutionError, GlobalIdResult, _resolve, generate_global_ids
+from composegtfs.services.generate_global_ids import GlobalIdResolutionError, GlobalIdResult, _resolve, generate_global_ids
 
 
 # ---------------------------------------------------------------------------

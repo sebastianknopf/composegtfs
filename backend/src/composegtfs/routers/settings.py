@@ -6,10 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
-from app.database import get_session
-from app.models import AppSetting, User
-from app.permissions import Permission, require
+from composegtfs.auth import get_current_user
+from composegtfs.database import get_session
+from composegtfs.models import AppSetting, User
+from composegtfs.permissions import Permission, require
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 

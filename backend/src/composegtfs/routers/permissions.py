@@ -10,9 +10,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.auth import get_current_user
-from app.models import User
-from app.permissions import PERMISSION_GROUPS
+from composegtfs.auth import get_current_user
+from composegtfs.models import User
+from composegtfs.permissions import PERMISSION_GROUPS
 
 router = APIRouter(prefix="/api/permissions", tags=["permissions"])
 

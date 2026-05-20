@@ -10,11 +10,11 @@ from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
-from app.database import get_session
-from app.models import User, Version
-from app.permissions import Permission, require
-from app.services.version_copy import run_copy
+from composegtfs.auth import get_current_user
+from composegtfs.database import get_session
+from composegtfs.models import User, Version
+from composegtfs.permissions import Permission, require
+from composegtfs.services.version_copy import run_copy
 
 router = APIRouter(prefix="/api/versions", tags=["versions"])
 

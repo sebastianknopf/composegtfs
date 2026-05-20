@@ -27,4 +27,4 @@ where = ["src"]
 
 [tool.setuptools_scm]
 root = ".."
-write_to = "backend/src/app/_version.py"
+write_to = "backend/src/composegtfs/_version.py"

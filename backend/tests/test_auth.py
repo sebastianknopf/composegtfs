@@ -12,13 +12,13 @@ import tests.test_config  # noqa: F401
 
 import jwt
 
-from app.auth import (
+from composegtfs.auth import (
     _decode_token,
     create_access_token,
     hash_password,
     verify_password,
 )
-from app.config import settings
+from composegtfs.config import settings
 
 
 class TestPasswordHashing(unittest.TestCase):

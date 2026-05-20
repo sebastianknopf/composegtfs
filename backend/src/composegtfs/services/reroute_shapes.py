@@ -44,8 +44,8 @@ from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Shape, ShapeIntermediatePoint, Stop
-from app.services.graphhopper import (
+from composegtfs.models import Shape, ShapeIntermediatePoint, Stop
+from composegtfs.services.graphhopper import (
     GraphhopperError,
     UNSUPPORTED_GTFS_TYPES,
     encode_polyline,

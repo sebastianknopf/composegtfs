@@ -14,7 +14,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 # Import models so Alembic can detect them
-from app.models import Base  # noqa: F401, E402
+from composegtfs.models import Base  # noqa: F401, E402
 
 config = context.config
 
