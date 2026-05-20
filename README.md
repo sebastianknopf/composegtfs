@@ -1,3 +1,5 @@
+[![Tests](https://github.com/sebastianknopf/composegtfs/actions/workflows/tests.yml/badge.svg)](https://github.com/sebastianknopf/composegtfs/actions/workflows/tests.yml)
+
 # composegtfs
 
 A web-based editor for creating and maintaining GTFS (General Transit Feed Specification) datasets.
