@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_session
-from app.models import Calendar, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
+from app.models import Calendar, Headsign, Route, RouteBandStop, Shape, Stop, StopTime, Trip, User, Version
 from app.permissions import Permission, require
+from app.services.generate_global_ids import GlobalIdResolutionError, generate_global_ids
 
 router = APIRouter(prefix="/api/versions/{version_id}/schedule", tags=["schedule"])
 
@@ -552,75 +553,35 @@ async def remove_route_band_stop(
 
 
 # ===========================================================================
-# Shapes
+# Shapes  (schedule-scoped read-only, requires only SCHEDULE_READ)
 # ===========================================================================
 
-class ShapeOut(BaseModel):
+class ScheduleShapeOut(BaseModel):
     version_id:      uuid.UUID
     shape_id:        str
     shape_name:      str | None
     shape_polyline:  str
     routed_polyline: str | None
+    route_type:      int | None
 
     model_config = {"from_attributes": True}
 
 
-class ShapeCreate(BaseModel):
-    shape_id:        str
-    shape_name:      str | None = None
-    shape_polyline:  str
-    routed_polyline: str | None = None
-    apply_to_pattern: bool = False
-    pattern_hash:    str | None = None
-
-    @field_validator("shape_id")
-    @classmethod
-    def validate_shape_id(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("shape_id must not be empty")
-        return v
-
-    @field_validator("shape_polyline")
-    @classmethod
-    def validate_shape_polyline(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("shape_polyline must not be empty")
-        return v
-
-
-class ShapeUpdate(BaseModel):
-    shape_name:      str | None = None
-    shape_polyline:  str
-    routed_polyline: str | None = None
-    apply_to_pattern: bool = False
-    pattern_hash:    str | None = None
-
-    @field_validator("shape_polyline")
-    @classmethod
-    def validate_shape_polyline(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("shape_polyline must not be empty")
-        return v
-
-
 @router.get(
     "/shapes",
-    response_model=list[ShapeOut],
-    summary="Search shapes for route-path flyouts",
+    response_model=list[ScheduleShapeOut],
+    summary="Search shapes (schedule-scoped, for route-path flyouts)",
     dependencies=[require(Permission.SCHEDULE_READ)],
 )
-async def search_shapes(
+async def schedule_search_shapes(
     version_id: uuid.UUID,
     q: str | None = Query(default=None, description="Search by shape_id or shape_name"),
     limit: int = Query(default=50, ge=1, le=500),
+    route_type: int | None = Query(default=None, description="Filter by shape route_type"),
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[Shape]:
     await _get_version_or_404(version_id, session)
-
     stmt = select(Shape).where(Shape.version_id == version_id)
     query = (q or "").strip()
     if query:
@@ -631,68 +592,20 @@ async def search_shapes(
                 Shape.shape_name.ilike(like),
             )
         )
-
+    if route_type is not None:
+        stmt = stmt.where(Shape.route_type == route_type)
     stmt = stmt.order_by(Shape.shape_name.nulls_last(), Shape.shape_id).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-@router.post(
-    "/shapes",
-    response_model=ShapeOut,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a shape",
-    dependencies=[require(Permission.SCHEDULE_WRITE)],
-)
-async def create_shape(
-    version_id: uuid.UUID,
-    body: ShapeCreate,
-    _: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Shape:
-    await _get_version_or_404(version_id, session)
-
-    existing = await session.execute(
-        select(Shape).where(Shape.version_id == version_id, Shape.shape_id == body.shape_id)
-    )
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A shape with this shape_id already exists in this version",
-        )
-
-    shape = Shape(
-        version_id=version_id,
-        shape_id=body.shape_id,
-        shape_name=(body.shape_name.strip() if body.shape_name is not None else None),
-        shape_polyline=body.shape_polyline,
-        routed_polyline=body.routed_polyline,
-    )
-    session.add(shape)
-    await session.commit()
-    await session.refresh(shape)
-
-    # Apply shape to all trips with matching pattern if requested
-    if body.apply_to_pattern and body.pattern_hash:
-        await session.execute(
-            update(Trip).where(
-                Trip.version_id == version_id,
-                Trip.geo_pattern_hash == body.pattern_hash,
-                Trip.shape_id.is_(None),
-            ).values(shape_id=body.shape_id)
-        )
-        await session.commit()
-
-    return shape
-
-
 @router.get(
     "/shapes/{shape_id}",
-    response_model=ShapeOut,
-    summary="Get a shape by ID",
+    response_model=ScheduleShapeOut,
+    summary="Get a single shape (schedule-scoped, for label/route-type resolution)",
     dependencies=[require(Permission.SCHEDULE_READ)],
 )
-async def get_shape(
+async def schedule_get_shape(
     version_id: uuid.UUID,
     shape_id: str,
     _: User = Depends(get_current_user),
@@ -700,67 +613,6 @@ async def get_shape(
 ) -> Shape:
     await _get_version_or_404(version_id, session)
     return await _get_shape_or_404(version_id, shape_id, session)
-
-
-@router.put(
-    "/shapes/{shape_id}",
-    response_model=ShapeOut,
-    summary="Update a shape",
-    dependencies=[require(Permission.SCHEDULE_WRITE)],
-)
-async def update_shape(
-    version_id: uuid.UUID,
-    shape_id: str,
-    body: ShapeUpdate,
-    _: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Shape:
-    await _get_version_or_404(version_id, session)
-    shape = await _get_shape_or_404(version_id, shape_id, session)
-
-    shape.shape_name = body.shape_name.strip() if body.shape_name is not None else None
-    shape.shape_polyline = body.shape_polyline
-    shape.routed_polyline = body.routed_polyline
-    await session.commit()
-    await session.refresh(shape)
-
-    # Apply shape to all trips with matching pattern if requested
-    if body.apply_to_pattern and body.pattern_hash:
-        await session.execute(
-            update(Trip).where(
-                Trip.version_id == version_id,
-                Trip.geo_pattern_hash == body.pattern_hash,
-                Trip.shape_id.is_(None),
-            ).values(shape_id=shape_id)
-        )
-        await session.commit()
-
-    return shape
-
-
-@router.delete(
-    "/shapes/{shape_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a shape and detach it from trips",
-    dependencies=[require(Permission.SCHEDULE_DELETE)],
-)
-async def delete_shape(
-    version_id: uuid.UUID,
-    shape_id: str,
-    _: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> None:
-    await _get_version_or_404(version_id, session)
-    shape = await _get_shape_or_404(version_id, shape_id, session)
-
-    await session.execute(
-        update(Trip)
-        .where(Trip.version_id == version_id, Trip.shape_id == shape_id)
-        .values(shape_id=None)
-        .execution_options(synchronize_session="fetch")
-    )
-    await session.delete(shape)
-    await session.commit()
 
 
 # ===========================================================================
@@ -795,12 +647,13 @@ class TripOut(BaseModel):
     service_id:            str | None
     direction_id:          int | None
     trip_short_name:       str | None
-    trip_headsign_id:      str | None
+    trip_headsign_id:      uuid.UUID | None
     block_id:              str | None
     shape_id:              str | None
     wheelchair_accessible: int | None
     bikes_allowed:         int | None
     cars_allowed:          int | None
+    global_id:             str | None
     geo_pattern_hash:      str | None
     schedule_pattern_hash: str | None
 
@@ -812,12 +665,13 @@ class TripCreate(BaseModel):
     service_id:            str | None = None
     direction_id:          int | None = None
     trip_short_name:       str | None = None
-    trip_headsign_id:      str | None = None
+    trip_headsign_id:      uuid.UUID | None = None
     block_id:              str | None = None
     shape_id:              str | None = None
     wheelchair_accessible: int | None = None
     bikes_allowed:         int | None = None
     cars_allowed:          int | None = None
+    global_id:             str | None = None
 
     @field_validator("direction_id")
     @classmethod
@@ -831,12 +685,13 @@ class TripUpdate(BaseModel):
     service_id:            str | None = None
     direction_id:          int | None = None
     trip_short_name:       str | None = None
-    trip_headsign_id:      str | None = None
+    trip_headsign_id:      uuid.UUID | None = None
     block_id:              str | None = None
     shape_id:              str | None = None
     wheelchair_accessible: int | None = None
     bikes_allowed:         int | None = None
     cars_allowed:          int | None = None
+    global_id:             str | None = None
 
     @field_validator("direction_id")
     @classmethod
@@ -854,7 +709,7 @@ class EmbeddedStopTimeOut(BaseModel):
     route_band_stop_id:  uuid.UUID
     arrival_time:        str | None
     departure_time:      str | None
-    stop_headsign_id:    str | None
+    stop_headsign_id:    uuid.UUID | None
     pickup_type:         int | None
     drop_off_type:       int | None
     continuous_pickup:   int | None
@@ -1177,8 +1032,148 @@ async def batch_delete_trips(
 
 
 # ---------------------------------------------------------------------------
-# Batch-Copy
+# Wizard: assign matching shapes
 # ---------------------------------------------------------------------------
+
+class TripWizardAssignShapesRequest(BaseModel):
+    trip_ids: list[str]
+
+
+class TripWizardAssignShapesResponse(BaseModel):
+    updated: int
+    already_assigned: int = 0
+    no_match: int = 0
+
+
+@router.post(
+    "/{route_id}/trips/wizard/assign-shapes",
+    response_model=TripWizardAssignShapesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Assign matching shapes to trips based on geo_pattern_hash",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def wizard_assign_shapes(
+    version_id: uuid.UUID,
+    route_id:   str,
+    req:        TripWizardAssignShapesRequest = Body(...),
+    _:          User                          = Depends(get_current_user),
+    session:    AsyncSession                  = Depends(get_session),
+) -> TripWizardAssignShapesResponse:
+    """For each trip in trip_ids, check whether a Shape with shape_id equal to
+    the trip's geo_pattern_hash exists in this version. If found and the trip
+    does not already reference that shape, the trip is updated.
+
+    Returns the number of trips actually updated.
+    """
+    await _get_version_or_404(version_id, session)
+
+    result = await session.execute(
+        select(Trip).where(
+            Trip.version_id == version_id,
+            Trip.route_id   == route_id,
+            Trip.trip_id.in_(req.trip_ids),
+        )
+    )
+    trips = list(result.scalars().all())
+
+    if not trips:
+        return TripWizardAssignShapesResponse(updated=0)
+
+    # Group trips by geo_pattern_hash; those without a hash count as no_match
+    pattern_to_trips: dict[str, list[Trip]] = {}
+    no_match = 0
+    for trip in trips:
+        if trip.geo_pattern_hash is not None:
+            pattern_to_trips.setdefault(trip.geo_pattern_hash, []).append(trip)
+        else:
+            no_match += 1
+
+    if not pattern_to_trips:
+        return TripWizardAssignShapesResponse(updated=0, no_match=no_match)
+
+    # Look up shapes whose shape_id matches any of the collected hashes
+    shape_result = await session.execute(
+        select(Shape.shape_id).where(
+            Shape.version_id == version_id,
+            Shape.shape_id.in_(list(pattern_to_trips.keys())),
+        )
+    )
+    matching_shape_ids = set(shape_result.scalars().all())
+
+    updated = 0
+    already_assigned = 0
+    for pattern_hash, affected_trips in pattern_to_trips.items():
+        if pattern_hash not in matching_shape_ids:
+            no_match += len(affected_trips)
+            continue
+        for trip in affected_trips:
+            if trip.shape_id != pattern_hash:
+                trip.shape_id = pattern_hash
+                updated += 1
+            else:
+                already_assigned += 1
+
+    if updated:
+        await session.commit()
+
+    return TripWizardAssignShapesResponse(updated=updated, already_assigned=already_assigned, no_match=no_match)
+
+
+class TripWizardGenerateGlobalIdsRequest(BaseModel):
+    trip_ids: list[str]
+    preset: str
+    overwrite: bool = False
+
+    @field_validator("preset")
+    @classmethod
+    def preset_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("preset must not be empty")
+        if len(v) > 255:
+            raise ValueError("preset must not exceed 255 characters")
+        return v
+
+
+class TripWizardGenerateGlobalIdsResponse(BaseModel):
+    updated: int
+    skipped: int
+
+
+@router.post(
+    "/{route_id}/trips/wizard/generate-global-ids",
+    response_model=TripWizardGenerateGlobalIdsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate global IDs for selected trips using a preset template",
+    dependencies=[require(Permission.SCHEDULE_WRITE)],
+)
+async def wizard_generate_global_ids(
+    version_id: uuid.UUID,
+    route_id:   str,
+    req:        TripWizardGenerateGlobalIdsRequest = Body(...),
+    _:          User                               = Depends(get_current_user),
+    session:    AsyncSession                       = Depends(get_session),
+) -> TripWizardGenerateGlobalIdsResponse:
+    """Resolve the preset template for each trip in *req.trip_ids* and store
+    the result as ``global_id``.  When ``overwrite`` is False, trips that
+    already carry a ``global_id`` are counted as skipped."""
+    await _get_version_or_404(version_id, session)
+    try:
+        result = await generate_global_ids(
+            version_id=version_id,
+            route_id=route_id,
+            trip_ids=req.trip_ids,
+            preset=req.preset,
+            overwrite=req.overwrite,
+            session=session,
+        )
+    except GlobalIdResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": exc.error_code, **exc.params},
+        )
+    return TripWizardGenerateGlobalIdsResponse(updated=result.updated, skipped=result.skipped)
+
 
 class TripBatchCopyShift(BaseModel):
     offset_minutes: int   # 1..1439
@@ -1446,7 +1441,7 @@ class StopTimeOut(BaseModel):
     route_band_stop_id:   uuid.UUID
     arrival_time:         str | None
     departure_time:       str | None
-    stop_headsign_id:     str | None
+    stop_headsign_id:     uuid.UUID | None
     pickup_type:          int | None
     drop_off_type:        int | None
     continuous_pickup:    int | None
@@ -1460,7 +1455,7 @@ class StopTimeOut(BaseModel):
 class StopTimeUpsert(BaseModel):
     arrival_time:        str | None = None
     departure_time:      str | None = None
-    stop_headsign_id:    str | None = None
+    stop_headsign_id:    uuid.UUID | None = None
     pickup_type:         int | None = None
     drop_off_type:       int | None = None
     continuous_pickup:   int | None = None
@@ -1595,3 +1590,35 @@ async def delete_stop_time(
     await _refresh_trip_hashes(version_id, trip_id, session)
     await session.commit()
 
+
+# ---------------------------------------------------------------------------
+# Headsigns (read-only, for assignment in schedule context)
+# ---------------------------------------------------------------------------
+
+class HeadsignRef(BaseModel):
+    id:          uuid.UUID
+    name:        str
+    number:      int | None
+    destination: str
+
+    model_config = {"from_attributes": True}
+
+
+@router.get(
+    "/headsigns",
+    response_model=list[HeadsignRef],
+    summary="List all headsigns available in this version",
+    dependencies=[require(Permission.SCHEDULE_READ)],
+)
+async def list_headsigns_for_schedule(
+    version_id: uuid.UUID,
+    _:          User         = Depends(get_current_user),
+    session:    AsyncSession = Depends(get_session),
+) -> list[HeadsignRef]:
+    await _get_version_or_404(version_id, session)
+    result = await session.execute(
+        select(Headsign)
+        .where(Headsign.version_id == version_id)
+        .order_by(Headsign.number.nulls_last(), Headsign.name)
+    )
+    return result.scalars().all()

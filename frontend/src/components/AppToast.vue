@@ -41,8 +41,8 @@ import { toastState } from '@/stores/toast.js'
 }
 
 .app-toast--info {
-  background: #303845;
-  color: #ffffff;
+  background: var(--app-primary-color, #303845);
+  color: var(--app-topbar-color, #ffffff);
 }
 
 .app-toast--error {

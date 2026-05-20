@@ -61,6 +61,7 @@ function emptyForm() {
     continuous_pickup:   '',
     continuous_drop_off: '',
     cemv_support:        '',
+    global_id:           '',
   }
 }
 
@@ -190,6 +191,7 @@ function populateForm() {
       continuous_pickup:   props.route.continuous_pickup    != null ? String(props.route.continuous_pickup) : '',
       continuous_drop_off: props.route.continuous_drop_off  != null ? String(props.route.continuous_drop_off) : '',
       cemv_support:        props.route.cemv_support         != null ? String(props.route.cemv_support) : '',
+      global_id:           props.route.global_id            ?? '',
     }
   } else {
     form.value = emptyForm()
@@ -230,6 +232,7 @@ function handleSave() {
     continuous_pickup:   int_(form.value.continuous_pickup),
     continuous_drop_off: int_(form.value.continuous_drop_off),
     cemv_support:        int_(form.value.cemv_support),
+    global_id:           str(form.value.global_id),
   })
 }
 
@@ -304,6 +307,13 @@ function handleDelete() {
               <div slot="headline">{{ agency.agency_name }} ({{ agency.agency_id }})</div>
             </md-select-option>
           </md-outlined-select>
+
+          <md-outlined-text-field
+            :label="t('routes.field_global_id')"
+            :value="form.global_id"
+            :disabled="isReadonly"
+            @input="form.global_id = $event.target.value"
+          />
         </div>
 
         <!-- Section: Description & Type -->

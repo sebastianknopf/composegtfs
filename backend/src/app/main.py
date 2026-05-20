@@ -23,6 +23,8 @@ from app.routers import routes as routes_router
 from app.routers import schedule as schedule_router
 from app.routers import routing as routing_router
 from app.routers import gtfs_export as gtfs_export_router
+from app.routers import shapes as shapes_router
+from app.routers import headsigns as headsigns_router
 
 app = FastAPI(
     title="composegtfs",
@@ -57,6 +59,8 @@ app.include_router(stops_router.router)
 app.include_router(routes_router.router)
 app.include_router(schedule_router.router)
 app.include_router(routing_router.router)
+app.include_router(shapes_router.router)
+app.include_router(headsigns_router.router)
 app.include_router(gtfs_export_router.router)
 
 

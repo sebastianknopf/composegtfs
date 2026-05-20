@@ -45,6 +45,7 @@ function emptyForm() {
     agency_fare_url: '',
     agency_email:    '',
     cemv_support:    '',
+    global_id:       '',
   }
 }
 
@@ -172,6 +173,7 @@ watch(() => props.modelValue, (val) => {
           agency_email:    props.agency.agency_email    ?? '',
           cemv_support:    props.agency.cemv_support != null
             ? String(props.agency.cemv_support) : '',
+          global_id:       props.agency.global_id       ?? '',
         }
       : emptyForm()
     fieldErrors.value = emptyErrors()
@@ -198,6 +200,7 @@ function handleSave() {
     agency_fare_url: nullable(form.value.agency_fare_url),
     agency_email:    nullable(form.value.agency_email),
     cemv_support:    form.value.cemv_support === '' ? null : parseInt(form.value.cemv_support, 10),
+    global_id:       nullable(form.value.global_id),
   })
 }
 </script>
@@ -237,6 +240,13 @@ function handleSave() {
           autocomplete="off"
           required
           @input="form.agency_name = $event.target.value; clearFieldError('agency_name')"
+        />
+        <md-outlined-text-field
+          class="agency-edit-field"
+          :label="t('agency.field_global_id')"
+          :value="form.global_id"
+          autocomplete="off"
+          @input="form.global_id = $event.target.value"
         />
       </div>
 

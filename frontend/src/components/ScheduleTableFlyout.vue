@@ -28,6 +28,7 @@ const props = defineProps({
   isGhost:           { type: Boolean, default: false },
   readonly:          { type: Boolean, default: false },
   disabled:          { type: Boolean, default: false },
+  valueLabel:        { type: String,  default: '' },
 })
 
 const emit = defineEmits(['update:modelValue', 'open', 'close', 'search-change'])
@@ -36,16 +37,19 @@ const searchQuery = ref('')
 
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return props.items
-  return props.items.filter(item =>
-    item.id.toLowerCase().includes(q) ||
-    item.label.toLowerCase().includes(q) ||
-    (item.sublabel && item.sublabel.toLowerCase().includes(q))
-  )
+  const matched = q
+    ? props.items.filter(item =>
+        item.id.toLowerCase().includes(q) ||
+        item.label.toLowerCase().includes(q) ||
+        (item.sublabel && item.sublabel.toLowerCase().includes(q))
+      )
+    : props.items
+  return matched.slice(0, 10)
 })
 
 const selectedLabel = computed(() => {
   if (!props.modelValue) return ''
+  if (props.valueLabel) return props.valueLabel
   const found = props.items.find(i => i.id === props.modelValue)
   return found ? found.label : props.modelValue
 })

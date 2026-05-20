@@ -105,6 +105,32 @@ function isValidBcp47(tag) {
 - Wenn die effektive Dialogbreite im Framework nicht weiter beeinflussbar ist, lieber Felder untereinander und ueber die volle verfuegbare Breite anordnen als gequetschte Mehrspaltenlayouts zu erzwingen.
 - Alle Felder sollen die volle verfuegbare Breite ihres Containers nutzen.
 
+## Icon im Headline-Bereich
+- Das Icon im Headline-Bereich muss immer in der Primaerfarbe (`var(--md-sys-color-primary, #1f69e0)`) eingefaerbt werden.
+- Dafuer muss die Headline-Struktur wie folgt aufgebaut sein:
+  ```html
+  <div slot="headline" class="my-dialog__headline">
+    <md-icon class="my-dialog__headline-icon">icon_name</md-icon>
+    {{ t('...title...') }}
+  </div>
+  ```
+- Die zugehoerigen Scoped-Styles:
+  ```css
+  .my-dialog__headline {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .my-dialog__headline-icon {
+    font-size: 1.5rem;
+    --md-icon-size: 1.5rem;
+    color: var(--md-sys-color-primary, #1f69e0);
+    flex-shrink: 0;
+  }
+  ```
+- Kein nacktes `<md-icon>` ohne diese Klasse und Farbzuweisung im Headline-Bereich verwenden.
+
 ## Stilregeln
 - Hintergrund der Modals: weiss
 - Border-Radius: maximal `6px`

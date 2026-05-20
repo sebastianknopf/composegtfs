@@ -58,6 +58,9 @@ async function _parseError(res) {
   const err = new Error(code)
   err.status = res.status
   err.code = code
+  err.detail = (detail !== null && typeof detail === 'object' && !Array.isArray(detail))
+    ? detail
+    : (typeof detail === 'string' ? detail : null)
   return err
 }
 
@@ -205,21 +208,22 @@ export const api = {
       batchDelete: (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-delete`, { trip_ids: tripIds }),
       batchShift:  (versionId, routeId, tripIds, offsetMinutes, direction) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-shift`, { trip_ids: tripIds, offset_minutes: offsetMinutes, direction }),
       batchCopy:   (versionId, routeId, body) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/batch-copy`, body),
+      wizardAssignShapes:      (versionId, routeId, tripIds) => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/wizard/assign-shapes`, { trip_ids: tripIds }),
+      wizardGenerateGlobalIds: (versionId, routeId, body)    => request('POST', `/versions/${versionId}/schedule/${routeId}/trips/wizard/generate-global-ids`, body),
     },
     stopTimes: {
       list:   (versionId, routeId, tripId)                        => request('GET',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times`),
       upsert: (versionId, routeId, tripId, routeBandStopId, data) => request('PUT',    `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`, data),
       delete: (versionId, routeId, tripId, routeBandStopId)       => request('DELETE', `/versions/${versionId}/schedule/${routeId}/trips/${encodeURIComponent(tripId)}/stop-times/${routeBandStopId}`),
     },
+    headsigns: (versionId) => request('GET', `/versions/${versionId}/schedule/headsigns`),
     shapes: {
-      search: (versionId, query = '', limit = 50) => request(
-        'GET',
-        `/versions/${versionId}/schedule/shapes?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
-      ),
-      get:    (versionId, shapeId)       => request('GET',    `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
-      create: (versionId, data)          => request('POST',   `/versions/${versionId}/schedule/shapes`, data),
-      update: (versionId, shapeId, data) => request('PUT',    `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`, data),
-      delete: (versionId, shapeId)       => request('DELETE', `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
+      search: (versionId, query = '', limit = 50, routeType = null) => {
+        let url = `/versions/${versionId}/schedule/shapes?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`
+        if (routeType !== null && routeType !== undefined) url += `&route_type=${encodeURIComponent(routeType)}`
+        return request('GET', url)
+      },
+      get: (versionId, shapeId) => request('GET', `/versions/${versionId}/schedule/shapes/${encodeURIComponent(shapeId)}`),
     },
   },
 
@@ -229,12 +233,34 @@ export const api = {
     create:             (versionId, data)                        => request('POST',   `/versions/${versionId}/stops`, data),
     get:                (versionId, stopId)                      => request('GET',    `/versions/${versionId}/stops/${stopId}`),
     update:             (versionId, stopId, data)                => request('PUT',    `/versions/${versionId}/stops/${stopId}`, data),
-    delete:             (versionId, stopId)                      => request('DELETE', `/versions/${versionId}/stops/${stopId}`),
+    delete:             (versionId, stopId)                      => {
+      const token = localStorage.getItem('access_token')
+      return fetch(`${BASE}/versions/${versionId}/stops/${stopId}`, {
+        method: 'DELETE',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      })
+    },
     listPlatforms:      (versionId, stopId)                      => request('GET',    `/versions/${versionId}/stops/${stopId}/platforms`),
     createPlatform:     (versionId, stopId, data)                => request('POST',   `/versions/${versionId}/stops/${stopId}/platforms`, data),
     getPlatform:        (versionId, stopId, platformId)          => request('GET',    `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`),
-    updatePlatform:     (versionId, stopId, platformId, data)    => request('PUT',    `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`, data),
-    deletePlatform:     (versionId, stopId, platformId)          => request('DELETE', `/versions/${versionId}/stops/${stopId}/platforms/${platformId}`),
+    updatePlatform:     (versionId, stopId, platformId, data)    => {
+      const token = localStorage.getItem('access_token')
+      return fetch(`${BASE}/versions/${versionId}/stops/${stopId}/platforms/${platformId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(data),
+      })
+    },
+    deletePlatform:     (versionId, stopId, platformId)          => {
+      const token = localStorage.getItem('access_token')
+      return fetch(`${BASE}/versions/${versionId}/stops/${stopId}/platforms/${platformId}`, {
+        method: 'DELETE',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      })
+    },
   },
 
   auxCalendars: {
@@ -246,6 +272,27 @@ export const api = {
     listDates:  (versionId, auxCalendarId)         => request('GET',    `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates`),
     addDates:   (versionId, auxCalendarId, data)   => request('POST',   `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates`, data),
     deleteDate: (versionId, auxCalendarId, date)   => request('DELETE', `/versions/${versionId}/aux-calendars/${auxCalendarId}/dates/${date}`),
+  },
+
+  shapes: {
+    list:   (versionId)                => request('GET',   `/versions/${versionId}/shapes`),
+    get:    (versionId, shapeId)       => request('GET',   `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`),
+    search: (versionId, query = '', limit = 50, routeType = null) => {
+      let url = `/versions/${versionId}/shapes/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`
+      if (routeType !== null && routeType !== undefined) url += `&route_type=${encodeURIComponent(routeType)}`
+      return request('GET', url)
+    },
+    create: (versionId, data)          => request('POST',  `/versions/${versionId}/shapes`, data),
+    update: (versionId, shapeId, data) => request('PATCH', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`, data),
+    delete: (versionId, shapeId)       => request('DELETE', `/versions/${versionId}/shapes/${encodeURIComponent(shapeId)}`),
+  },
+
+  headsigns: {
+    list:   (versionId)           => request('GET',    `/versions/${versionId}/headsigns`),
+    create: (versionId, data)     => request('POST',   `/versions/${versionId}/headsigns`, data),
+    get:    (versionId, id)       => request('GET',    `/versions/${versionId}/headsigns/${id}`),
+    update: (versionId, id, data) => request('PATCH',  `/versions/${versionId}/headsigns/${id}`, data),
+    delete: (versionId, id)       => request('DELETE', `/versions/${versionId}/headsigns/${id}`),
   },
 
   gtfsExport: {

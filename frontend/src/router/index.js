@@ -3,6 +3,7 @@ import LoginView from '@/views/LoginView.vue'
 import AppView from '@/views/AppView.vue'
 import AgencyView from '@/views/AgencyView.vue'
 import CalendarView from '@/views/CalendarView.vue'
+import HeadsignsView from '@/views/HeadsignsView.vue'
 import AccountsView from '@/views/AccountsView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import NetworkView from '@/views/NetworkView.vue'
@@ -39,6 +40,12 @@ const routes = [
         name: 'calendar',
         component: CalendarView,
         meta: { section: 'masterdata' },
+      },
+      {
+        path: 'headsigns',
+        name: 'headsigns',
+        component: HeadsignsView,
+        meta: { section: 'masterdata', permission: 'headsigns:read' },
       },
       {
         path: 'accounts',

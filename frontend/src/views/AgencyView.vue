@@ -24,8 +24,9 @@ const loading  = ref(false)
 const CEMV_LABEL = { '0': () => t('agency.cemv_0'), '1': () => t('agency.cemv_1'), '2': () => t('agency.cemv_2') }
 
 const columns = [
-  { key: 'agency_id',       label: () => t('agency.column_id'),       sortable: true, width: '140px' },
-  { key: 'agency_name',     label: () => t('agency.column_name'),     sortable: true },
+  { key: 'agency_id',       label: () => t('agency.column_id'),        sortable: true, width: '140px' },
+  { key: 'global_id',       label: () => t('agency.column_global_id'), sortable: true, width: '160px' },
+  { key: 'agency_name',     label: () => t('agency.column_name'),      sortable: true },
   { key: 'agency_url',      label: () => t('agency.column_url'),      sortable: false },
   { key: 'agency_timezone', label: () => t('agency.column_timezone'), sortable: true, width: '160px' },
   { key: 'agency_lang',     label: () => t('agency.column_lang'),     sortable: true, width: '90px',  align: 'center' },
@@ -162,6 +163,10 @@ function cemvLabel(val) {
           {{ value }}
         </a>
         <span v-else>—</span>
+      </template>
+
+      <template #cell-global_id="{ value }">
+        <span>{{ value ?? '—' }}</span>
       </template>
 
       <template #cell-agency_email="{ value }">

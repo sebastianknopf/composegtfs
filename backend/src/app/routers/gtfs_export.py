@@ -47,10 +47,12 @@ router = APIRouter(prefix="/api/gtfs", tags=["gtfs-export"])
 # ---------------------------------------------------------------------------
 
 class ExportRequest(BaseModel):
-    route_ids:        list[str]
-    date_from:        date
-    date_to:          date
-    export_all_stops: bool = False
+    route_ids:          list[str]
+    date_from:          date
+    date_to:            date
+    export_all_stops:   bool = False
+    export_shapes:      bool = True
+    prefer_global_ids:  bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +86,8 @@ async def gtfs_export(
             date_from=body.date_from,
             date_to=body.date_to,
             export_all_stops=body.export_all_stops,
+            export_shapes=body.export_shapes,
+            prefer_global_ids=body.prefer_global_ids,
             session=session,
         ):
             yield _sse(event)

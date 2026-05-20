@@ -30,6 +30,7 @@ class AgencyOut(BaseModel):
     agency_fare_url: str | None
     agency_email:    str | None
     cemv_support:    int | None
+    global_id:       str | None
 
     model_config = {"from_attributes": True}
 
@@ -44,6 +45,7 @@ class AgencyCreate(BaseModel):
     agency_fare_url: str | None = None
     agency_email:    str | None = None
     cemv_support:    int | None = None
+    global_id:       str | None = None
 
     @field_validator("agency_id")
     @classmethod
@@ -102,6 +104,7 @@ class AgencyUpdate(BaseModel):
     agency_fare_url: str | None = None
     agency_email:    str | None = None
     cemv_support:    int | None = None
+    global_id:       str | None = None
 
     @field_validator("agency_name")
     @classmethod
@@ -237,6 +240,7 @@ async def create_agency(
         agency_fare_url=body.agency_fare_url,
         agency_email=body.agency_email,
         cemv_support=body.cemv_support,
+        global_id=body.global_id,
     )
     session.add(agency)
     await session.commit()
@@ -293,6 +297,8 @@ async def update_agency(
         agency.agency_email = body.agency_email
     if "cemv_support" in body.model_fields_set:
         agency.cemv_support = body.cemv_support
+    if "global_id" in body.model_fields_set:
+        agency.global_id = body.global_id
 
     await session.commit()
     await session.refresh(agency)

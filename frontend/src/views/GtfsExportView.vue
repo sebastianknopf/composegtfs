@@ -63,7 +63,9 @@ async function loadDefaultDates(vid) {
 watch(versionId, loadDefaultDates, { immediate: true })
 
 // ---- Data reduction ----
-const exportAllStops = ref(false)
+const exportAllStops   = ref(false)
+const exportShapes     = ref(true)
+const preferGlobalIds  = ref(false)
 
 // ---- Export / log ----
 const isExporting = ref(false)
@@ -89,6 +91,8 @@ function startExport() {
     date_from:        dateFrom.value,
     date_to:          dateTo.value,
     export_all_stops: exportAllStops.value,
+    export_shapes:    exportShapes.value,
+    prefer_global_ids: preferGlobalIds.value,
   }).then(async (response) => {
     // Adopt a refreshed sliding token if the backend issued one
     const newToken = response.headers.get('X-New-Token')
@@ -227,6 +231,20 @@ function _downloadZip(base64, filename) {
               @change="exportAllStops = $event.target.checked"
             />
             <span>{{ t('gtfs_export.export_all_stops') }}</span>
+          </label>
+          <label class="export-section__checkbox-row">
+            <md-checkbox
+              :checked="exportShapes"
+              @change="exportShapes = $event.target.checked"
+            />
+            <span>{{ t('gtfs_export.export_shapes') }}</span>
+          </label>
+          <label class="export-section__checkbox-row">
+            <md-checkbox
+              :checked="preferGlobalIds"
+              @change="preferGlobalIds = $event.target.checked"
+            />
+            <span>{{ t('gtfs_export.prefer_global_ids') }}</span>
           </label>
         </div>
       </section>

@@ -108,21 +108,25 @@ function openCopy(version) {
   copyModalOpen.value     = true
 }
 
-function handleCopyDone(newVersion) {
+function handleCopyDone(newVersion, isNew) {
   const v = {
     id:         newVersion.id,
     name:       newVersion.name,
     created_at: newVersion.created_at,
     sort_order: newVersion.sort_order ?? null,
   }
-  versions.value.push(v)
+  // Guard against duplicates (happens when copying into an existing version)
+  if (!versions.value.some(x => x.id === v.id)) {
+    versions.value.push(v)
+  }
   if (!versionsStore.state.versions.some(x => x.id === v.id)) {
     versionsStore.state.versions.push(v)
   }
   if (!versionsStore.state.activeVersionId) {
     versionsStore.setActive(v.id)
   }
-  toast.show(t('version_copy.success', { name: v.name }), 'info')
+  const msgKey = isNew ? 'version_copy.success' : 'version_copy.success_merge'
+  toast.show(t(msgKey, { name: v.name }), 'info')
 }
 
 // ---- Drag & drop reorder ----

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,12 @@ from app.auth import get_current_user
 from app.database import get_session
 from app.models import Stop, User, Version
 from app.permissions import Permission, require
+from app.services.reroute_shapes import (
+    cleanup_free_coords_around_gaps,
+    collect_deletion_context,
+    reroute_shapes_by_ids,
+    reroute_shapes_for_platform,
+)
 
 router = APIRouter(prefix="/api/versions/{version_id}/stops", tags=["stops"])
 
@@ -37,6 +45,7 @@ class StopOut(BaseModel):
     level_id:            str | None
     platform_code:       str | None
     stop_access:         int | None
+    global_id:           str | None
 
     model_config = {"from_attributes": True}
 
@@ -57,6 +66,7 @@ class StopCreate(BaseModel):
     level_id:            str | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_id")
     @classmethod
@@ -119,6 +129,7 @@ class StopUpdate(BaseModel):
     level_id:            str | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_lat")
     @classmethod
@@ -173,6 +184,7 @@ class PlatformCreate(BaseModel):
     wheelchair_boarding: int | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_id")
     @classmethod
@@ -226,6 +238,7 @@ class PlatformUpdate(BaseModel):
     wheelchair_boarding: int | None = None
     platform_code:       str | None = None
     stop_access:         int | None = None
+    global_id:           str | None = None
 
     @field_validator("stop_lat")
     @classmethod
@@ -445,8 +458,8 @@ async def update_stop(
 
 @router.delete(
     "/{stop_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a top-level stop and all its platforms",
+    summary="Delete a top-level stop and all its platforms, then re-route affected shapes (SSE)",
+    response_class=StreamingResponse,
     dependencies=[require(Permission.STOPS_DELETE)],
 )
 async def delete_stop(
@@ -454,11 +467,20 @@ async def delete_stop(
     stop_id: str,
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> None:
+) -> StreamingResponse:
     await _get_version_or_404(version_id, session)
     stop = await _get_stop_or_404(version_id, stop_id, session, require_no_parent=True)
-    # Explicitly delete all child platforms before the parent so the cascade
-    # is guaranteed regardless of deferred-constraint behaviour in PostgreSQL.
+
+    # Collect platform IDs belonging to this stop (must happen before deletion)
+    platform_ids_result = await session.execute(
+        select(Stop.stop_id).where(Stop.version_id == version_id, Stop.parent_station == stop_id)
+    )
+    platform_stop_ids = list(platform_ids_result.scalars().all())
+
+    # Collect affected shape IDs and gap info before cascade deletes intermediate points
+    shape_ids, gaps = await collect_deletion_context(version_id, platform_stop_ids, session)
+
+    # Delete all child platforms then the parent stop
     await session.execute(
         sa_delete(Stop)
         .where(Stop.version_id == version_id, Stop.parent_station == stop_id)
@@ -466,6 +488,23 @@ async def delete_stop(
     )
     await session.delete(stop)
     await session.commit()
+
+    # Remove free-coordinate intermediate points orphaned by the deletion
+    await cleanup_free_coords_around_gaps(version_id, gaps, session)
+    await session.commit()
+
+    async def _generate():
+        async for event in reroute_shapes_by_ids(version_id, shape_ids, session):
+            yield _sse(event)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -563,10 +602,15 @@ async def get_platform(
     return await _get_platform_or_404(version_id, stop_id, platform_stop_id, session)
 
 
+def _sse(event_dict: dict) -> str:
+    """Encode a dict as a single SSE data line."""
+    return f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
+
+
 @router.put(
     "/{stop_id}/platforms/{platform_stop_id}",
-    response_model=StopOut,
-    summary="Update a platform (Steig) of a stop",
+    summary="Update a platform (Steig) of a stop and re-route affected shapes (SSE)",
+    response_class=StreamingResponse,
     dependencies=[require(Permission.STOPS_WRITE)],
 )
 async def update_platform(
@@ -576,20 +620,47 @@ async def update_platform(
     body: PlatformUpdate,
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> Stop:
+) -> StreamingResponse:
     await _get_version_or_404(version_id, session)
     await _get_stop_or_404(version_id, stop_id, session, require_no_parent=True)
     platform = await _get_platform_or_404(version_id, stop_id, platform_stop_id, session)
+
+    # Capture old position before applying changes
+    old_lat = platform.stop_lat
+    old_lon = platform.stop_lon
+
     _apply_nullable_fields(platform, body)
     await session.commit()
     await session.refresh(platform)
-    return platform
+
+    position_changed = (old_lat != platform.stop_lat or old_lon != platform.stop_lon)
+
+    platform_dict = StopOut.model_validate(platform).model_dump(mode="json")
+
+    async def _generate():
+        if position_changed:
+            async for event in reroute_shapes_for_platform(version_id, platform_stop_id, session):
+                yield _sse(event)
+        else:
+            yield _sse({"type": "done", "total": 0, "platform": platform_dict})
+            return
+        # After rerouting stream finishes, emit final done with platform data
+        yield _sse({"type": "done", "platform": platform_dict})
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.delete(
     "/{stop_id}/platforms/{platform_stop_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a platform (Steig) of a stop",
+    summary="Delete a platform (Steig) of a stop and re-route affected shapes (SSE)",
+    response_class=StreamingResponse,
     dependencies=[require(Permission.STOPS_DELETE)],
 )
 async def delete_platform(
@@ -598,9 +669,31 @@ async def delete_platform(
     platform_stop_id: str,
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> None:
+) -> StreamingResponse:
     await _get_version_or_404(version_id, session)
     await _get_stop_or_404(version_id, stop_id, session, require_no_parent=True)
     platform = await _get_platform_or_404(version_id, stop_id, platform_stop_id, session)
+
+    # Collect affected shape IDs and gap info before the cascade deletes intermediate points
+    shape_ids, gaps = await collect_deletion_context(version_id, [platform_stop_id], session)
+
     await session.delete(platform)
     await session.commit()
+
+    # Remove free-coordinate intermediate points orphaned by the deletion
+    await cleanup_free_coords_around_gaps(version_id, gaps, session)
+    await session.commit()
+
+    async def _generate():
+        async for event in reroute_shapes_by_ids(version_id, shape_ids, session):
+            yield _sse(event)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+

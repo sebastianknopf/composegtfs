@@ -101,6 +101,7 @@ class Version(Base):
     route_band_stops = relationship("RouteBandStop", back_populates="version", cascade="all, delete-orphan")
     shapes = relationship("Shape", back_populates="version", cascade="all, delete-orphan")
     trips = relationship("Trip", back_populates="version", cascade="all, delete-orphan")
+    headsigns = relationship("Headsign", back_populates="version", cascade="all, delete-orphan")
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +122,7 @@ class Agency(Base):
     agency_fare_url = Column(String(2048), nullable=True)
     agency_email    = Column(String(254), nullable=True)
     cemv_support    = Column(Integer, nullable=True)
+    global_id       = Column(String(255), nullable=True)
 
     version = relationship("Version", back_populates="agencies")
 
@@ -261,8 +263,14 @@ class Stop(Base):
     level_id            = Column(String(255),  nullable=True)
     platform_code       = Column(String(255),  nullable=True)
     stop_access         = Column(SmallInteger, nullable=True)
+    global_id           = Column(String(255),  nullable=True)
 
     version = relationship("Version", back_populates="stops")
+    shape_intermediate_points = relationship(
+        "ShapeIntermediatePoint",
+        back_populates="stop",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -300,6 +308,7 @@ class Route(Base):
     continuous_drop_off = Column(SmallInteger, nullable=True)
     network_id          = Column(String(255), nullable=True)
     cemv_support        = Column(Integer,     nullable=True)
+    global_id           = Column(String(255), nullable=True)
 
     version = relationship("Version", back_populates="routes")
     trips = relationship("Trip", back_populates="route", cascade="all, delete-orphan")
@@ -356,13 +365,60 @@ class RouteBandStop(Base):
 class Shape(Base):
     __tablename__ = "shapes"
 
-    version_id       = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
-    shape_id         = Column(String(255), primary_key=True)
-    shape_name       = Column(String(255), nullable=True)
-    shape_polyline   = Column(Text, nullable=False)
-    routed_polyline  = Column(Text, nullable=True)
+    version_id          = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True)
+    shape_id            = Column(String(255), primary_key=True)
+    shape_name          = Column(String(255), nullable=True)
+    shape_polyline      = Column(Text, nullable=False)
+    routed_polyline     = Column(Text, nullable=True)
+    description         = Column(Text, nullable=True)
+    route_type          = Column(Integer, nullable=True)
+    is_autoroute_active = Column(Boolean, nullable=False, default=False)
 
     version = relationship("Version", back_populates="shapes")
+    intermediate_points = relationship(
+        "ShapeIntermediatePoint",
+        back_populates="shape",
+        cascade="all, delete-orphan",
+        order_by="ShapeIntermediatePoint.sort_order",
+    )
+
+
+# ---------------------------------------------------------------------------
+# ShapeIntermediatePoint  — ordered intermediate points for a Shape.
+#
+# Each point is either a free coordinate (lat/lon set, stop_id NULL) or
+# a reference to a stop/platform (stop_id set, lat/lon ignored).
+# Deleting the parent Shape or the referenced Stop cascades to this table.
+# ---------------------------------------------------------------------------
+
+class ShapeIntermediatePoint(Base):
+    __tablename__ = "shape_intermediate_points"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version_id = Column(UUID(as_uuid=True), nullable=False)
+    shape_id   = Column(String(255), nullable=False)
+    sort_order = Column(Integer, nullable=False)
+    lat        = Column(Float, nullable=True)
+    lon        = Column(Float, nullable=True)
+    stop_id    = Column(String(255), nullable=True)
+
+    shape = relationship("Shape", back_populates="intermediate_points")
+    stop  = relationship("Stop", back_populates="shape_intermediate_points")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["version_id", "shape_id"],
+            ["shapes.version_id", "shapes.shape_id"],
+            name="fk_sip_shape",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["version_id", "stop_id"],
+            ["stops.version_id", "stops.stop_id"],
+            name="fk_sip_stop",
+            ondelete="CASCADE",
+        ),
+    )
 
 
 
@@ -389,7 +445,7 @@ class Trip(Base):
     service_id            = Column(String(255), nullable=True)   # calendar ref; no DB FK (see above)
     direction_id          = Column(SmallInteger, nullable=True)  # 0 = outbound, 1 = inbound
     trip_short_name       = Column(String(255), nullable=True)
-    trip_headsign_id      = Column(String(255), nullable=True)   # placeholder; FK added later
+    trip_headsign_id      = Column(UUID(as_uuid=True), ForeignKey("headsigns.id", ondelete="SET NULL"), nullable=True)
     block_id              = Column(String(255), nullable=True)
     shape_id              = Column(String(255), nullable=True)
 
@@ -397,6 +453,8 @@ class Trip(Base):
     wheelchair_accessible = Column(SmallInteger, nullable=True)
     bikes_allowed         = Column(SmallInteger, nullable=True)
     cars_allowed          = Column(SmallInteger, nullable=True)  # non-standard extension
+
+    global_id             = Column(String(255), nullable=True)
 
     # Hash columns for later use (pattern matching, geo deduplication)
     geo_pattern_hash      = Column(String(64), nullable=True)
@@ -440,7 +498,7 @@ class StopTime(Base):
     arrival_time   = Column(String(8), nullable=True)   # NULL → same as departure
     departure_time = Column(String(8), nullable=True)   # NULL → not yet entered
 
-    stop_headsign_id      = Column(String(255), nullable=True)  # placeholder; FK added later
+    stop_headsign_id      = Column(UUID(as_uuid=True), ForeignKey("headsigns.id", ondelete="SET NULL"), nullable=True)
     pickup_type           = Column(SmallInteger, nullable=True)
     drop_off_type         = Column(SmallInteger, nullable=True)
     continuous_pickup     = Column(SmallInteger, nullable=True)
@@ -458,4 +516,25 @@ class StopTime(Base):
             name="fk_stop_times_trip",
             ondelete="CASCADE",
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Headsigns  — display text shown on a vehicle, scoped to a Version
+# ---------------------------------------------------------------------------
+
+class Headsign(Base):
+    __tablename__ = "headsigns"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version_id = Column(UUID(as_uuid=True), ForeignKey("versions.id", ondelete="CASCADE"), nullable=False)
+
+    name        = Column(String(255), nullable=False)
+    number      = Column(Integer,     nullable=True)
+    destination = Column(String(255), nullable=False)
+
+    version = relationship("Version", back_populates="headsigns")
+
+    __table_args__ = (
+        UniqueConstraint("version_id", "name", name="uq_headsigns_version_name"),
     )

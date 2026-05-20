@@ -151,10 +151,12 @@ function computeEffectiveDates(dayType, assignmentsWithDates) {
       restrictSet = new Set([...restrictSet].filter(d => sets[i].has(d)))
     }
     if (restrictSet.size === 0 && onlyAssignments.length >= 2) conflict = true
-    // Apply restriction to base
-    for (const d of [...baseDates]) {
-      if (!restrictSet.has(d)) baseDates.delete(d)
-    }
+    // Effective set becomes the intersection itself:
+    // (base ∩ restrictSet) ∪ (restrictSet − base) = restrictSet
+    // This mirrors the backend logic and ensures "nur" calendars can add dates
+    // not covered by the weekday pattern (e.g. when base is empty).
+    baseDates.clear()
+    for (const d of restrictSet) baseDates.add(d)
   }
 
   // --- junction_type 1 (zusätzlich) and 2 (nicht) ---
